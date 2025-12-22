@@ -120,3 +120,7 @@ The Parser Theory solves this:
 <img width="630" height="217" alt="image" src="https://github.com/user-attachments/assets/f57b64f1-d70a-43fc-aa63-8c4777b87a96" />
 
 -------------------------------------------------------------------------------
+
+If Prism detects an entropy of 7.5 in an .exe file's code section, it tells the analyst:
+"I cannot read the strings or instructions in this file because they are scrambled. You must send this to Ghidra or x64dbg to see it after it unpacks in memory."  \
+This is the "Downstream RE Guidance" feature I mentioned in the README.
