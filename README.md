@@ -1,6 +1,13 @@
 <h1 align="center">$${\color{lightblue}Prism}$$</h1>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Python-3.8+-ED5564?logo=python&logoColor=white">
+  <img src="https://img.shields.io/badge/PDF%20Standard-ISO%2032000-FFCE54">
+  <img src="https://img.shields.io/badge/Office-OOXML%20Standard-A0D568">
+  <img src="https://img.shields.io/badge/YARA-Supported-4FC1E8?logo=yara&logoColor=white">
+  <img src="https://img.shields.io/badge/License-MIT-AC92EB">
+</p>
+<p align="center">
   <i>Prism is a static malware analysis framework designed to safely inspect suspicious files and generate actionable insights.
 It dissects files—PDFs, executables, and Office documents—into metadata, strings, embedded scripts, and structural indicators to reveal hidden threats. It scores risk, highlights suspicious patterns, and produces clear reports, helping security professionals quickly identify which files require deeper investigation or reverse engineering.</i>
 </p>
