@@ -70,5 +70,37 @@ For RTF, CSV, and others, Prism follows the "Least Entropy, Most Strings" rule:
 - HEURISTIC SCORING:
   Example: 10 pts (URL) + 40 pts (Macro) + 20 pts (Obfuscation) = 70 pts.
 
-70+ POINTS = CRITICAL RISK (Immediate Reverse Engineering Required)
-===============================================================================
+-------------------------------------------------------------------------------
+## Parsing the file into an Object Graph
+
+1. The Parser Architecture\
+To build this, we follow a three-stage pipeline:
+- The Lexer (Scanner): It reads the raw bytes and identifies "tokens" (e.g., in a PDF, it looks for keywords like obj, endobj, stream, and xref).
+- The Parser: It takes those tokens and determines their relationship based on the format's specification (the "Grammar").
+- The Object Graph Construction: It maps these relationships into memory as a Tree or Directed Acyclic Graph (DAG).
+-------------------------------------------------------------------------------
+2. Implementation: PDF (ISO 32000)\
+PDFs are "Body-Object" formatted. They aren't read from top to bottom; they are read from the Trailer (the end) backwards.
+- The Theory: You find the xref (Cross-Reference) table at the end of the file. This table acts as an index, telling you exactly where every "Object" (like a page, an image, or a script) starts in the binary data.
+- The Graph: Once you have the index, Prism follows the pointers.
+- Root Object → Pages → Individual Page → Contents → JavaScript Stream.
+- Malware Detection: If the parser encounters an object that isn't indexed in the xref table but exists in the data, it's a "hidden" object—a major red flag.
+
+
+
+
+
+
+## Entropy calculation :
+
+<img width="656" height="341" alt="image" src="https://github.com/user-attachments/assets/6e1c8289-0c35-4f0e-a8bf-7028435455bf" /> 
+
+-------------------------------------------------------------------------------
+**_So we implement this is by doing the following :_** 
+
+<img width="651" height="262" alt="image" src="https://github.com/user-attachments/assets/52bb0d19-fb63-48fe-b214-53303a89445c" />
+
+-------------------------------------------------------------------------------
+<img width="630" height="217" alt="image" src="https://github.com/user-attachments/assets/f57b64f1-d70a-43fc-aa63-8c4777b87a96" />
+
+-------------------------------------------------------------------------------
