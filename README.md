@@ -35,5 +35,17 @@ It dissects files—PDFs, executables, and Office documents—into metadata, str
 4.  **Scoring:** A final risk score is calculated based on detected indicators.
 5.  **Triage:** Use the generated report to decide: *Discard, Archive, or move to Reverse Engineering.*
 
+prism/
+├── main.py              # Entry point / CLI Interface
+├── core/
+│   ├── engine.py        # Orchestrates the analysis pipeline
+│   ├── scanner.py       # YARA and Heuristic logic
+│   └── report.py        # Output formatting
+├── parsers/
+│   ├── pe_parser.py     # PE file logic
+│   ├── pdf_parser.py    # PDF logic
+│   └── office_parser.py # OLE/Office logic
+└── config/
+    └── settings.yaml    # User agents and API keys
 ---
 
