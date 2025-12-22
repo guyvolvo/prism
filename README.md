@@ -1,4 +1,4 @@
-<h1 align="center">$${\color{lightblue}Prism}$$</h1>
+<h1 align="center">$${\Huge \color{lightblue}{Prism}}$$</h1>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.8+-ED5564?logo=python&logoColor=white">
