@@ -85,9 +85,25 @@ PDFs are "Body-Object" formatted. They aren't read from top to bottom; they are 
 - The Graph: Once you have the index, Prism follows the pointers.
 - Root Object → Pages → Individual Page → Contents → JavaScript Stream.
 - Malware Detection: If the parser encounters an object that isn't indexed in the xref table but exists in the data, it's a "hidden" object—a major red flag.
+-------------------------------------------------------------------------------
+3. Implementation: Office Docs (OOXML)\ 
+Modern Office docs (.docx, .xlsx) are actually "Container" formats. \
+- The Theory: The "Physical" layer is a standard ZIP file. The "Logical" layer consists of XML files and binary streams.
+- The Graph: 1. Decompress: Open the ZIP structure. 2. Map Relationships: Read the .rels files. These files are the "glue" that tells the document how parts connect.
+  * Document.xml → Link to Settings → Link to VBA Macro Stream.
+- Malware Detection: A "Remote Template" relationship pointing to an external URL instead of a local file is a classic indicator of a Template Injection attack.
+-------------------------------------------------------------------------------
+4. Why using an "Object Graph" is better than a "String Search"
+If you just search a file for the string "JavaScript", a clever attacker can hide it like this: \
+_J + a + v + a + S + c + r + i + p + t_
 
+The Parser Theory solves this:
+- Instead of looking for words, Prism looks for the Logic Block.
+- It finds the /Type /Action object.
+- It sees the /S /JavaScript key.
+- It extracts the data regardless of how it was "spelled" or broken up in the raw binary.
 
-
+-------------------------------------------------------------------------------
 
 
 
