@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/License-MIT-AC92EB">
 </p>
 <p align="center">
-  <i>Disclamer: Prism is a static malware analysis framework designed to safely inspect suspicious files and generate actionable insights.
+  <i>Prism is a static malware analysis framework designed to safely inspect suspicious files and generate actionable insights.
 It dissects files—PDFs, executables, and Office documents—into metadata, strings, embedded scripts, and structural indicators to reveal hidden threats. It scores risk, highlights suspicious patterns, and produces clear reports, helping security professionals quickly identify which files require deeper investigation or reverse engineering.</i>
 </p>
     
@@ -52,4 +52,6 @@ It dissects files—PDFs, executables, and Office documents—into metadata, str
 <img width="425" height="247" alt="image" src="https://github.com/user-attachments/assets/23eff4dc-93b2-4374-b5f6-74d8e6e17b18" />
 
 ---
+
+### Continue to the [Theory Page](https://github.com/guyvolvo/prism/blob/main/theory.md)
 
