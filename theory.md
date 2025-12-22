@@ -1,6 +1,4 @@
-===============================================================================
-PRISM FRAMEWORK: TECHNICAL THEORY & TRIAGE 
-===============================================================================
+# PRISM FRAMEWORK: TECHNICAL THEORY & TRIAGE 
 
 1. THE CORE TECHNICAL THEORY
 ----------------------------
