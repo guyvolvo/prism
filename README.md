@@ -35,22 +35,7 @@ It dissects files—PDFs, executables, and Office documents—into metadata, str
 4.  **Scoring:** A final risk score is calculated based on detected indicators.
 5.  **Triage:** Use the generated report to decide: *Discard, Archive, or move to Reverse Engineering.*
 
-prism/ \
-├── main.py \
-├── core/ \
-│   ├── engine.py \
-│   ├── scanner.py yara/heuristic \
-│   └── report.py \
-├── parsers/ \
-│   ├── pe_parser.py \
-│   ├── pdf_parser.py \
-│   └── office_parser.py \
-├── rules/ \
-│   └── yara/ \
-│       ├── pe.yar \
-│       ├── pdf.yar \
-│       └── generic.yar \
-└── config/ \
-    └── settings.yaml 
+<img width="425" height="247" alt="image" src="https://github.com/user-attachments/assets/23eff4dc-93b2-4374-b5f6-74d8e6e17b18" />
+
 ---
 
