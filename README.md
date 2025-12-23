@@ -67,6 +67,8 @@ prism/
 ├── maldocs/          # Place PDF/Office/Macro YARA rules here
 ├── core/             # Triage engine and report logic
 └── parsers/          # Format-specific extraction logic
+
+All `.exe`, `.doc`, `.pdf`, and other sample files included in this repository are safe and do not contain real malware
 ```
 ## **_Adding your own YARA rules_**
 Prism supports the use of custom YARA rules to extend detection coverage and adapt the framework to specific threat models or environments. 
