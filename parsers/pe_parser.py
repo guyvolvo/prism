@@ -1,29 +1,38 @@
-# Portable executables parser
-# extract_sections: Use the pefile library to iterate through .text, .data, and .rsrc.
-# check_imports: Look for suspicious API calls like VirtualAlloc or WriteProcessMemory.
-# find_overlay: Check for extra data appended to the end of the file, -
-# - a common place for malware to hide its payload.
-
-# Integration with scanner.py
-# For a PE file, you shouldn't just run entropy on the whole file. You should run it per section:
-# .text section (code): High entropy (e.g., > 7.0) here strongly suggests a Packed or Encrypted executable.
-# .rsrc section: High entropy here often means an encrypted secondary payload is being stored as a resource.
-
 import pefile
-from core.scanner import triage
+import os
+from core.scanner import triage, shannon_entropy
 
 
 def analyze_pe(file_path):
     try:
         pe = pefile.PE(file_path)
-    except Exception as e:
-        return {"error": f"Failed to parse PE {e}"}
+    except (pefile.PEFormatError, Exception):
+
+        try:
+            with open(file_path, "rb") as f:
+                raw_data = f.read()
+
+            entropy_val = shannon_entropy(raw_data)
+
+            return {
+                "File": file_path,
+                "Triggers": ["MALFORMED PE HEADER: Analyzed as raw binary"],
+                "Stream_Results": [{
+                    "Section_Name": "HEADER_CORRUPT_OR_RAW",
+                    "Entropy": entropy_val,
+                    "Requires_Deep_RE": True if entropy_val > 7.2 else False,
+                    "Preview_Bytes": raw_data[:1024]
+                }]
+            }
+        except Exception as e:
+            return {"error": f"Critical IO Error: {e}"}
 
     final_report = {
         "File": file_path,
         "Triggers": [],
         "Stream_Results": []
     }
+
     suspicious_apis = [
         "VirtualAlloc", "WriteProcessMemory",
         "CreateRemoteThread", "IsDebuggerPresent"
@@ -37,19 +46,16 @@ def analyze_pe(file_path):
                     if name in suspicious_apis:
                         final_report["Triggers"].append(f"Suspicious API: {name}")
 
-    # 2. Section Analysis (The Entropy Engine)
-    # We scan each section individually to find hidden payloads
+    # Section Analysis
     for section in pe.sections:
-        # Clean the section name
         section_name = section.Name.decode('utf-8', errors='ignore').strip('\x00')
         section_data = section.get_data()
 
-        # Pass the raw section bytes to triage engine
         result = triage(section_data)
         result["Section_Name"] = section_name
+        result["Preview_Bytes"] = section_data[:1024]
 
-        # If .text is high entropy, it's almost certainly packed
-        if section_name == ".text" and result["Requires_Deep_RE"]:
+        if section_name == ".text" and result.get("Requires_Deep_RE"):
             final_report["Triggers"].append("High Entropy Code Section (Likely Packed)")
 
         final_report["Stream_Results"].append(result)

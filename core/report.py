@@ -1,10 +1,28 @@
 import os
 import datetime
+import string
 from colors import PrismColors as PC
 
 
-def generate_report(data):
+def is_signature_legit(preview_bytes):
 
+    if not preview_bytes or len(preview_bytes) < 8:
+        return True
+
+    printable_chars = set(string.printable.encode())
+    printable_count = sum(1 for byte in preview_bytes if byte in printable_chars)
+    printable_ratio = printable_count / len(preview_bytes)
+
+    null_count = preview_bytes.count(b'\x00')
+    null_ratio = null_count / len(preview_bytes)
+
+    if printable_ratio < 0.05 and null_ratio < 0.01:
+        return False
+
+    return True
+
+
+def generate_report(data):
     if "error" in data:
         print(f"\n{PC.CRITICAL}[!] ANALYSIS ERROR: {data['error']}")
         return
@@ -19,11 +37,9 @@ def generate_report(data):
     print(f"{PC.HEADER}TARGET: {filename}")
     print(f"{PC.HEADER}{'=' * 70}")
 
-    # Heuristics (Behaviors/Intent)
     print(f"\n{PC.INFO}[!] HEURISTIC TRIGGERS: {len(triggers)}")
     if triggers:
         for t in triggers:
-
             print(f"    {PC.WARNING}-> DETECTED: {t}")
     else:
         print(f"    {PC.DIM}-> No immediate triggers found.")
@@ -35,29 +51,39 @@ def generate_report(data):
     for res in results:
         name = res.get("Section_Name") or res.get("Stream_Name") or res.get("Macro_Name") or "Unknown_Object"
         entropy = res.get("Entropy", 0.0)
+        preview = res.get("Preview_Bytes", b"")
 
-        # Entropy logic
+        status = res.get('Status', 'Scanned')
+
         if res.get("Requires_Deep_RE"):
-            color = PC.CRITICAL
-            marker = "[!!!]"
-            critical_risk = True
+            if is_signature_legit(preview):
+                color = PC.WARNING
+                marker = "[WARN]"
+                status = "High Entropy (Likely Resource)"
+            else:
+                color = PC.CRITICAL
+                marker = "[!!!]"
+                status = "Critical/Packed (No Valid Structure)"
+                critical_risk = True
         else:
             color = PC.SUCCESS
             marker = "[OK ]"
 
-        print(f"    {color}{marker} {name:<18} | Entropy: {entropy:<5} | Status: {res.get('Status', 'Scanned')}")
+        print(f"    {color}{marker} {name:<18} | Entropy: {entropy:<5} | Status: {status}")
 
         if res.get("YARA_Matches"):
             print(f"        {PC.CRITICAL}YARA MATCHES: {', '.join(res['YARA_Matches'])}")
 
     # Final Verdict
+    malicious_triggers = [t for t in triggers if "MALFORMED" not in t]
+
     print(f"\n{PC.HEADER}{'=' * 70}")
     if critical_risk:
-        print(f"{PC.CRITICAL}VERDICT: CRITICAL - HIGH ENTROPY DETECTED (Likely Packed)")
-        print(f"{PC.DIM}ACTION: Manual de-obfuscation or Dynamic Analysis required.")
-    elif triggers:
+        print(f"{PC.CRITICAL}VERDICT: CRITICAL - HIGH ENTROPY & SUSPICIOUS SIGNATURE")
+    elif malicious_triggers:  # Only flag if there are real threats (APIs, Macros, etc.)
         print(f"{PC.WARNING}VERDICT: SUSPICIOUS - ACTIVE CONTENT DETECTED")
-        print(f"{PC.DIM}ACTION: Review script streams for malicious intent.")
+    elif triggers:  # If only the Malformed Header trigger exists
+        print(f"{PC.INFO}VERDICT: INFORMATIONAL - UNUSUAL FILE STRUCTURE")
     else:
         print(f"{PC.SUCCESS}VERDICT: LOW RISK")
     print(f"{PC.HEADER}{'=' * 70}\n")

@@ -12,14 +12,14 @@ from colors import PrismColors as PC
 
 
 def triage_router(file_path):
-
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == ".pdf":
         return analyze_pdf(file_path)
-    elif ext in [".doc", ".xls", ".ppt", ".docm", ".xlsm"]:
+
+    elif ext in [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".docm", ".xlsm"]:
         return analyze_ole(file_path)
-    elif ext in [".exe", ".dll", ".bin", ".sys"]:
+    elif ext in [".exe", ".dll", ".bin", ".sys", ".com"]:
         return analyze_pe(file_path)
     else:
         return {"error": f"Unsupported file type: {ext}"}
@@ -65,8 +65,11 @@ def main():
     all_results = []
 
     for file_path in files_to_process:
-        # Route the file to the right parser
         data = triage_router(file_path)
+
+        if not data:
+            print(f"{PC.WARNING}[!] Parser returned nothing for {file_path}")
+            continue
 
         if "error" in data:
             if args.verbose:
