@@ -58,10 +58,16 @@ def main():
 
             parser_data = triage_router(file_path)
             heuristics = parser_data.get("Triggers", [])
+
             with open(file_path, "rb") as f:
                 raw_bytes = f.read()
 
             triage_data = triage(raw_bytes, scanner, heuristics=heuristics)
+
+            all_triggers = []
+            all_triggers.extend(triage_data.get("YARA_Matches", []))
+            all_triggers.extend(triage_data.get("Heuristics", []))
+            triage_data["Triggers"] = all_triggers
 
             if file_path.lower().endswith(('.pdf', '.docx', '.xlsx')):
                 if triage_data["Status"] == "SUSPICIOUS" and not triage_data["YARA_Matches"]:
@@ -76,8 +82,8 @@ def main():
                 "structure": parser_data,
                 "analysis": triage_data
             }
-
-            all_results.append(final_report)
+            if triage_data["YARA_Matches"]:
+                triage_data["Trigger_Count"] = len(triage_data["YARA_Matches"]) + len(triage_data.get("Heuristics", []))
 
             if args.json:
                 print(json.dumps(final_report, indent=4))

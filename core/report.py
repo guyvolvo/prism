@@ -2,7 +2,6 @@ from colors import PrismColors as PC
 
 
 def generate_report(data):
-    # Extract nested data safely
     info = data.get('file_info', {})
     struct = data.get('structure', {})
     analysis = data.get('analysis', {})
@@ -10,36 +9,41 @@ def generate_report(data):
     file_name = info.get('name', 'Unknown')
     entropy = analysis.get('Entropy', 0)
     yara_matches = analysis.get('YARA_Matches', [])
+    heuristics = analysis.get('Heuristics', [])
 
-    # Header
     print("=" * 70)
     print(f"PRISM TRIAGE REPORT | {info.get('timestamp', 'N/A')}")
     print(f"TARGET: {PC.HEADER}{file_name}{PC.RESET}")
     print("=" * 70)
 
-    # 1. Threat Indicators (YARA + Entropy)
-    trigger_count = len(yara_matches) + (1 if entropy > 7.5 else 0)
+    trigger_count = len(yara_matches) + len(heuristics) + (1 if entropy > 7.5 else 0)
+
     print(f"\n[!] THREAT INDICATORS: {PC.CRITICAL if trigger_count > 0 else PC.SUCCESS}{trigger_count}{PC.RESET}")
 
     if yara_matches:
         for match in yara_matches:
             print(f"    -> {PC.CRITICAL}YARA MATCH: {match}{PC.RESET}")
 
+    if heuristics:
+        for h in heuristics:
+            print(f"    -> {PC.WARNING}HEURISTIC: {h}{PC.RESET}")
+
     if entropy > 7.5:
         print(f"    -> {PC.WARNING}High Entropy ({entropy}): Potential Packing/Encryption{PC.RESET}")
-    elif trigger_count == 0:
+
+    if trigger_count == 0:
         print("    -> No immediate triggers found.")
 
-    # 2. Structure & Heuristics Breakdown
     print(f"\n[!] STRUCTURE ANALYSIS:")
 
-    # Handle 'Triggers' list (Suspicious APIs, Strings found by parser)
-    if 'Triggers' in struct and struct['Triggers']:
+    all_struct_alerts = struct.get('Triggers', [])
+    if all_struct_alerts:
         print(f"    {PC.WARNING}Heuristic Alerts:{PC.RESET}")
-        for trigger in struct['Triggers']:
+        for trigger in all_struct_alerts:
             print(f"      - {trigger}")
+    elif not heuristics and not yara_matches:
+        print("    -> Analysis complete (No structural anomalies).")
 
-    # Handle 'Stream_Results' (PE Sections / PDF Streams)
     if 'Stream_Results' in struct and struct['Stream_Results']:
         print(f"\n    {PC.INFO}Internal Streams/Sections:{PC.RESET}")
         print(f"      {'Name':<15} | {'Entropy':<8} | {'Status'}")
@@ -48,15 +52,10 @@ def generate_report(data):
             name = item.get('Section_Name', item.get('Name', 'unknown'))
             ent = item.get('Entropy', 0.0)
             status = "Suspicious" if ent > 7.2 else "Normal"
-
-            # Highlight suspicious sections in yellow
             color = PC.WARNING if ent > 7.2 else PC.RESET
             print(f"      {color}{name:<15} | {ent:<8} | {status}{PC.RESET}")
 
-    # 3. Final Verdict
     verdict = analysis.get('Status', 'UNKNOWN')
-
-    # Determine color based on severity
     if "CRITICAL" in verdict:
         v_color = PC.CRITICAL
     elif "SUSPICIOUS" in verdict:
