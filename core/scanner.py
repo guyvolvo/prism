@@ -52,32 +52,49 @@ def shannon_entropy(data: bytes) -> float:
     return round(entropy, 2)
 
 
+def get_content_heuristics(data: bytes):
+    h_list = []
+    content = data.decode('utf-8', errors='ignore')
+    patterns = {
+        "powershell": "PowerShell Execution",
+        "eval(": "Dynamic Code Execution",
+        "base64": "Encoded Payload",
+        "http": "Network/URL String",
+        "eicar": "EICAR Test String",
+        "cmd.exe": "Shell Spawn"
+    }
+
+    for key, label in patterns.items():
+        if key in content.lower():
+            h_list.append(f"Content Match: {label}")
+
+    return h_list
+
+
 def triage(data: bytes, scanner=None, heuristics=None):
     if scanner is None:
         scanner = scanner_instance
-
     if heuristics is None:
         heuristics = []
+    heuristics.extend(get_content_heuristics(data))
 
     entropy_score = shannon_entropy(data)
     yara_matches = scanner.scan_bytes(data)
-
     score = 0
+
     if len(yara_matches) > 0:
         score += 10
+
     if entropy_score > 7.8:
         score += 3
     elif entropy_score > 7.2:
         score += 1
-    suspicious_api_count = len([h for h in heuristics if "Suspicious API" in h])
 
-    if suspicious_api_count >= 3:
-        score += 4
-    elif suspicious_api_count >= 1:
-        score += 1
+    if heuristics:
+        score += (len(heuristics) * 2)
 
     if "MALFORMED PE HEADER" in heuristics:
-        score += 5
+        score += 4
 
     is_critical = score >= 7
     is_suspicious = score >= 3
@@ -86,6 +103,7 @@ def triage(data: bytes, scanner=None, heuristics=None):
         "Entropy": entropy_score,
         "YARA_Matches": yara_matches,
         "Score": score,
+        "Heuristics": heuristics,
         "Requires_Deep_RE": is_critical,
         "Status": "CRITICAL" if is_critical else ("SUSPICIOUS" if is_suspicious else "CLEAN")
     }
