@@ -4,6 +4,10 @@
 # Although we could use Alexa top 1 million probabilities I think we should
 # stick to shannon entropy as it doesn't require pre-calculated probability tables for specific text types
 # And we are working with bytes not text'
+import os
+
+# Replace with the actual path to your yara folder if different
+
 import yara
 import math
 from collections import Counter
