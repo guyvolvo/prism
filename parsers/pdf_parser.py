@@ -1,81 +1,83 @@
-import PyPDF2
+import re
+import zlib
 from PyPDF2 import PdfReader
-from core.scanner import triage, scanner_instance
+from core.scanner import triage, scanner_instance, shannon_entropy
 
 
-def pdf_data(file_path):
-    reader = PdfReader(file_path)
+def brute_force_carve(file_path):
 
-    report_data = {"triggers": find_javascript_triggers(reader), "streams_analysis": []}
+    with open(file_path, "rb") as f:
+        data = f.read()
 
-    for page in reader.pages:
-        content = page.get_contents()
-        if content:
-            try:
-                data = content.get_data() if not isinstance(content, list) else b"".join(
-                    [c.get_data() for c in content])
-                analysis = triage(data)
-                report_data["streams_analysis"].append(analysis)
-            except Exception:
-                continue
+    carved_results = []
 
-    return report_data
+    stream_pattern = re.compile(b"stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
+
+
+    hex_obfuscation = bool(re.search(b"/[#0-9a-fA-F]{2,}", data))
+
+    for idx, match in enumerate(stream_pattern.finditer(data)):
+        stream_content = match.group(1)
+
+        try:
+            stream_content = zlib.decompress(stream_content)
+        except:
+            pass
+
+        analysis = triage(stream_content, scanner_instance)
+        analysis['Section_Name'] = f"Carved_Stream_{idx}"
+        analysis['Hex_Obfuscation'] = hex_obfuscation
+        carved_results.append(analysis)
+
+    return carved_results
 
 
 def find_javascript_triggers(reader):
     triggers_found = []
     try:
         catalog = reader.trailer["/Root"]
-
         if "/Names" in catalog and "/JavaScript" in catalog["/Names"]:
             triggers_found.append("Embedded JavaScript Name")
         if "/OpenAction" in catalog:
             triggers_found.append("Auto-Run OpenAction")
-        if "/JS" in catalog or "/JavaScript" in catalog:
-            triggers_found.append("Direct JavaScript Entry")
+
+        catalog_keys = str(catalog.keys())
+        if "#" in catalog_keys:
+            triggers_found.append("Hex-Encoded Catalog Keys (Obfuscation)")
     except Exception:
         pass
     return triggers_found
 
 
-def extract_streams(reader):
-    streams_data = []
-    for obj in reader.objects:
-        try:
-            if hasattr(obj, "get_data"):
-                raw_bytes = obj.get_data()
-
-                if len(raw_bytes) > 0:
-                    stream_info = {
-                        "data": raw_bytes,
-                        "filter": str(obj.get('/Filter', '/None')),
-                        "type": str(obj.get('/Type', '/Unknown'))
-                    }
-                    streams_data.append(stream_info)
-        except Exception:
-            continue
-    return streams_data
-
-
 def analyze_pdf(file_path):
-    from PyPDF2 import PdfReader
-    from core.scanner import triage, scanner_instance
 
     try:
         reader = PdfReader(file_path)
-        from parsers.pdf_parser import find_javascript_triggers
         triggers = find_javascript_triggers(reader)
-        streams = extract_streams(reader)
-        results = []
 
-        for idx, s in enumerate(streams):
-            res = triage(s['data'], scanner_instance)
-            res['Section_Name'] = f"Stream_{idx}({s['filter']})"
-            results.append(res)
+        streams_data = []
+        for obj_ref in reader.objects:
+            try:
+                obj = reader.get_object(obj_ref)
+                if hasattr(obj, "get_data"):
+                    raw_bytes = obj.get_data()
+                    analysis = triage(raw_bytes, scanner_instance)
+                    analysis['Section_Name'] = f"Object_{obj_ref}"
+                    streams_data.append(analysis)
+            except:
+                continue
+
+        if len(triggers) == 0:
+            carved = brute_force_carve(file_path)
+            streams_data.extend(carved)
 
         return {
             "Triggers": triggers,
-            "Stream_Results": results
+            "Stream_Results": streams_data
         }
     except Exception as e:
-        return {"Triggers": [], "Stream_Results": [], "Error": str(e)}
+        return {
+            "Triggers": ["CRITICAL: PDF Structure Corrupt/Malformed"],
+            "Stream_Results": brute_force_carve(file_path),
+            "Error": str(e)
+        }

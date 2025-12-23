@@ -2,6 +2,7 @@ from colors import PrismColors as PC
 
 
 def generate_report(data):
+    
     info = data.get('file_info', {})
     struct = data.get('structure', {})
     analysis = data.get('analysis', {})
