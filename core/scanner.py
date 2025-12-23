@@ -1,6 +1,7 @@
 import os
 import yara
 import math
+import re
 from collections import Counter
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -12,7 +13,6 @@ class PrismScanner:
             os.path.join(BASE_DIR, "malware"),
             os.path.join(BASE_DIR, "maldocs")
         ]
-
         print(f"[*] Initializing Scanner. Searching in: {', '.join(self.rule_folders)}")
         self.rules = self._compile_all_rules()
 
@@ -31,7 +31,6 @@ class PrismScanner:
         for path, name in rule_map.items():
             try:
                 yara.compile(filepath=path)
-
                 namespace = os.path.basename(os.path.dirname(path))
                 if namespace == 'rules' or namespace == 'prism': namespace = 'general'
                 valid_rules[f"{namespace}_{name}"] = path
@@ -55,11 +54,10 @@ class PrismScanner:
             return []
         try:
             matches = self.rules.match(data=data)
-            if matches:
-                print(f"[DEBUG] YARA Matches Found: {matches}")
             return [f"{m.namespace}:{m.rule}" for m in matches]
         except Exception:
             return []
+
 
 scanner_instance = PrismScanner()
 
@@ -79,14 +77,25 @@ def shannon_entropy(data: bytes) -> float:
 def get_content_heuristics(data: bytes):
     h_list = []
     content = data.decode('utf-8', errors='ignore')
+
+    # Advanced Patterns for Shell Scripts & Malware
     patterns = {
         "powershell": "PowerShell Execution",
         "eval(": "Dynamic Code Execution",
         "base64": "Encoded Payload",
         "http": "Network/URL String",
         "eicar": "EICAR Test String",
-        "cmd.exe": "Shell Spawn"
+        "cmd.exe": "Shell Spawn",
+        "curl": "Downloader (curl)",
+        "wget": "Downloader (wget)",
+        "chmod +x": "Permission Escalation (chmod)",
+        "| sh": "Pipe to Shell",
+        "| bash": "Pipe to Shell",
+        "/dev/tcp/": "Potential Reverse Shell"
     }
+
+    if re.search(r'https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', content):
+        h_list.append("Critical: Raw IP Downloader Found")
 
     for key, label in patterns.items():
         if key in content.lower():
@@ -101,30 +110,42 @@ def triage(data: bytes, scanner=None, heuristics=None):
     if heuristics is None:
         heuristics = []
 
-    heuristics.extend(get_content_heuristics(data))
+    found_heuristics = get_content_heuristics(data)
+    heuristics.extend(found_heuristics)
     entropy_score = shannon_entropy(data)
     yara_matches = scanner.scan_bytes(data)
 
     score = 0
-    if len(yara_matches) > 0:
-        score += 10
-    if entropy_score > 7.8:
-        score += 3
-    elif entropy_score > 7.2:
-        score += 1
-    if heuristics:
-        score += (len(heuristics) * 2)
-    if "MALFORMED PE HEADER" in heuristics:
-        score += 4
 
-    is_critical = score >= 7
-    is_suspicious = score >= 3
+    if yara_matches:
+        score += 10
+
+    if entropy_score > 7.8:
+        score += 5
+    elif entropy_score > 7.2:
+        score += 2
+
+    for h in found_heuristics:
+        if "Critical" in h:
+            score += 6
+        elif "Pipe to Shell" in h:
+            score += 4
+        elif "Downloader" in h:
+            score += 3
+        else:
+            score += 2
+
+    status = "CLEAN"
+    if score >= 5:
+        status = "CRITICAL"
+    elif score >= 2:
+        status = "SUSPICIOUS"
 
     return {
         "Entropy": entropy_score,
         "YARA_Matches": yara_matches,
         "Score": score,
         "Heuristics": heuristics,
-        "Requires_Deep_RE": is_critical,
-        "Status": "CRITICAL" if is_critical else ("SUSPICIOUS" if is_suspicious else "CLEAN")
+        "Requires_Deep_RE": score >= 5,
+        "Status": status
     }
