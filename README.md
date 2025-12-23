@@ -55,3 +55,7 @@ It dissects files—PDFs, executables, and Office documents—into metadata, str
 
 ### Continue to the [Theory Page](https://github.com/guyvolvo/prism/blob/main/theory.md)
 
+References :
+
+[Information Entropy](https://redcanary.com/blog/threat-detection/threat-hunting-entropy/)
+[Entropy (information theory)](https://en.wikipedia.org/wiki/Entropy_(information_theory))
