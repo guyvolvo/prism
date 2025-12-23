@@ -17,12 +17,20 @@ It dissects files—PDFs, executables, and Office documents—into metadata, str
 </p>
 
 <p align="center">
-<sup> <i>Prism is currently in the design and research stage.</i> <br>
-<i>This document describes the intended architecture, detection logic,</i> <br>
-<i>and theoretical foundations prior to implementation.</i> <sup>
-</p>
 
-  
+
+
+
+
+### _To explore the codebase, review the architecture, or test early functionality:_
+
+```bash
+git clone https://github.com/guyvolvo/prism
+cd prism
+python3 main.py -h
+python3 main.py malware.exe
+```
+
 ## ✨ Key Features
 
 * **🛡️ Safe Static Analysis:** Zero-execution environment. All inspections are strictly read-only, ensuring malware cannot detonate during the triage phase.
@@ -34,7 +42,7 @@ It dissects files—PDFs, executables, and Office documents—into metadata, str
 * **🎯 YARA Integration:** Full support for custom and public YARA rulesets to match known threat families and TTPs.
 * **📝 Analyst-Friendly Reports:** Actionable output available in **JSON** (for automation) or **CLI** (for human readability), prioritizing risk levels.
 * **🛠️ Downstream RE Guidance:** Intelligent flagging of high-risk samples to streamline your workflow with tools like **Ghidra**, **IDA Pro**, or **Binary Ninja**.
-
+* **! Prism is OS-agnostic, but designed to be used in a malware-analysis environment. !**
 ---
 
 ## ⚙️ Workflow
@@ -49,13 +57,30 @@ It dissects files—PDFs, executables, and Office documents—into metadata, str
 4.  **Scoring:** A final risk score is calculated based on detected indicators.
 5.  **Triage:** Use the generated report to decide: *Discard, Archive, or move to Reverse Engineering.*
 
-<img width="425" height="247" alt="image" src="https://github.com/user-attachments/assets/23eff4dc-93b2-4374-b5f6-74d8e6e17b18" />
-
 ---
+## 📂 Project Structure & Setup
 
+```text
+prism/
+├── main.py
+├── malware/          # Place binary/RAT/Toolkit YARA rules here
+├── maldocs/          # Place PDF/Office/Macro YARA rules here
+├── core/             # Triage engine and report logic
+└── parsers/          # Format-specific extraction logic
+```
+## **_Adding your own YARA rules_**
+Prism supports the use of custom YARA rules to extend detection coverage and adapt the framework to specific threat models or environments. 
+To ensure correct discovery and loading, custom YARA rules must be placed in the project root directory (alongside the main Prism entry point), or in a clearly defined subdirectory explicitly referenced by the configuration.
+
+  
 ### Continue to the [Theory Page](https://github.com/guyvolvo/prism/blob/main/theory.md)
 
 _**References :**_ 
 
 [Information Entropy](https://redcanary.com/blog/threat-detection/threat-hunting-entropy/) \
 [Entropy (information theory)](https://en.wikipedia.org/wiki/Entropy_(information_theory))
+
+<p align=left">
+  <img src="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExNG83cmo5MWgwMGM0N2pjc29qaG8wZGJ2cmM0M3F0bnA4bXV6bTdtdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/sk6yL9EGVeAcE/giphy.gif" alt="Prism Demo" width="200">
+</p>
+
