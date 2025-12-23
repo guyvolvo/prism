@@ -60,7 +60,7 @@ def analyze_pdf(file_path):
     # Get triggers (Heuristics)
     triggers = find_javascript_triggers(reader)
 
-    # Get streams and run through your scanner.py
+    # Get streams and run through scanner.py
     streams = extract_streams(reader)
 
     final_report = {
@@ -70,7 +70,7 @@ def analyze_pdf(file_path):
     }
 
     for data in streams:
-        # This calls your Shannon Entropy + YARA logic
+        # calls Shannon Entropy + YARA logic
         result = triage(data)
         final_report["Stream_Results"].append(result)
 
