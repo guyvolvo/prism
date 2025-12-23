@@ -2,7 +2,6 @@ from colors import PrismColors as PC
 
 
 def generate_report(data):
-    
     info = data.get('file_info', {})
     struct = data.get('structure', {})
     analysis = data.get('analysis', {})
@@ -17,7 +16,9 @@ def generate_report(data):
     print(f"TARGET: {PC.HEADER}{file_name}{PC.RESET}")
     print("=" * 70)
 
-    trigger_count = len(yara_matches) + len(heuristics) + (1 if entropy > 7.5 else 0)
+    # Calculate triggers
+    all_struct_alerts = struct.get('Triggers', [])
+    trigger_count = len(yara_matches) + len(heuristics) + len(all_struct_alerts) + (1 if entropy > 7.5 else 0)
 
     print(f"\n[!] THREAT INDICATORS: {PC.CRITICAL if trigger_count > 0 else PC.SUCCESS}{trigger_count}{PC.RESET}")
 
@@ -37,7 +38,6 @@ def generate_report(data):
 
     print(f"\n[!] STRUCTURE ANALYSIS:")
 
-    all_struct_alerts = struct.get('Triggers', [])
     if all_struct_alerts:
         print(f"    {PC.WARNING}Heuristic Alerts:{PC.RESET}")
         for trigger in all_struct_alerts:
@@ -45,6 +45,7 @@ def generate_report(data):
     elif not heuristics and not yara_matches:
         print("    -> Analysis complete (No structural anomalies).")
 
+    has_high_entropy_stream = False
     if 'Stream_Results' in struct and struct['Stream_Results']:
         print(f"\n    {PC.INFO}Internal Streams/Sections:{PC.RESET}")
         print(f"      {'Name':<15} | {'Entropy':<8} | {'Status'}")
@@ -52,12 +53,21 @@ def generate_report(data):
         for item in struct['Stream_Results']:
             name = item.get('Section_Name', item.get('Name', 'unknown'))
             ent = item.get('Entropy', 0.0)
+            if ent > 7.2:
+                has_high_entropy_stream = True
             status = "Suspicious" if ent > 7.2 else "Normal"
             color = PC.WARNING if ent > 7.2 else PC.RESET
             print(f"      {color}{name:<15} | {ent:<8} | {status}{PC.RESET}")
 
-    verdict = analysis.get('Status', 'UNKNOWN')
-    if "CRITICAL" in verdict:
+    verdict = analysis.get('Status', 'CLEAN')
+
+    is_malformed = any("Corrupt" in str(t) or "Malformed" in str(t) for t in all_struct_alerts)
+
+    if is_malformed or has_high_entropy_stream:
+        if verdict == "CLEAN":
+            verdict = "SUSPICIOUS (Structural Anomaly)"
+
+    if "CRITICAL" in verdict or "MALICIOUS" in verdict:
         v_color = PC.CRITICAL
     elif "SUSPICIOUS" in verdict:
         v_color = PC.WARNING
