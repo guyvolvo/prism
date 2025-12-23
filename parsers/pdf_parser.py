@@ -1,6 +1,6 @@
 import PyPDF2
 from PyPDF2 import PdfReader
-from core.scanner import triage
+from core.scanner import triage, scanner_instance
 
 
 def pdf_data(file_path):
@@ -40,38 +40,42 @@ def find_javascript_triggers(reader):
 
 def extract_streams(reader):
     streams_data = []
-    for obj_index in range(1, len(reader.xref)):
+    for obj in reader.objects:
         try:
-            obj = reader.get_object(obj_index)
-            # If the object is a stream (contains data)
             if hasattr(obj, "get_data"):
                 raw_bytes = obj.get_data()
-                streams_data.append(raw_bytes)
 
+                if len(raw_bytes) > 0:
+                    stream_info = {
+                        "data": raw_bytes,
+                        "filter": str(obj.get('/Filter', '/None')),
+                        "type": str(obj.get('/Type', '/Unknown'))
+                    }
+                    streams_data.append(stream_info)
         except Exception:
             continue
-
     return streams_data
 
 
 def analyze_pdf(file_path):
-    reader = PdfReader(file_path)
+    from PyPDF2 import PdfReader
+    from core.scanner import triage, scanner_instance
 
-    # Get triggers (Heuristics)
-    triggers = find_javascript_triggers(reader)
+    try:
+        reader = PdfReader(file_path)
+        from parsers.pdf_parser import find_javascript_triggers
+        triggers = find_javascript_triggers(reader)
+        streams = extract_streams(reader)
+        results = []
 
-    # Get streams and run through scanner.py
-    streams = extract_streams(reader)
+        for idx, s in enumerate(streams):
+            res = triage(s['data'], scanner_instance)
+            res['Section_Name'] = f"Stream_{idx}({s['filter']})"
+            results.append(res)
 
-    final_report = {
-        "File": file_path,
-        "Triggers": triggers,
-        "Stream_Results": []
-    }
-
-    for data in streams:
-        # calls Shannon Entropy + YARA logic
-        result = triage(data)
-        final_report["Stream_Results"].append(result)
-
-    return final_report
+        return {
+            "Triggers": triggers,
+            "Stream_Results": results
+        }
+    except Exception as e:
+        return {"Triggers": [], "Stream_Results": [], "Error": str(e)}

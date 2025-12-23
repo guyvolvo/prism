@@ -4,11 +4,13 @@ import argparse
 import json
 from datetime import datetime
 
+from colors import PrismColors as PC
+from core.scanner import scanner_instance, triage
+from core.report import generate_report
+
 from parsers.pdf_parser import analyze_pdf
 from parsers.office_parser import analyze_ole
 from parsers.pe_parser import analyze_pe
-from core.report import generate_report
-from colors import PrismColors as PC
 
 
 def triage_router(file_path):
@@ -16,79 +18,85 @@ def triage_router(file_path):
 
     if ext == ".pdf":
         return analyze_pdf(file_path)
-
     elif ext in [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".docm", ".xlsm"]:
         return analyze_ole(file_path)
     elif ext in [".exe", ".dll", ".bin", ".sys", ".com"]:
         return analyze_pe(file_path)
     else:
-        return {"error": f"Unsupported file type: {ext}"}
+        return {"Stream_Results": [], "Triggers": [], "Status": "Unknown/Raw"}
 
 
 def main():
-
     parser = argparse.ArgumentParser(
         description=f"{PC.HEADER}Prism Triage Framework | Multi-format Malware Analysis{PC.RESET}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f"{PC.INFO}Example: python main.py samples/ -r -v{PC.RESET}"
     )
 
-
     parser.add_argument("target", help="Path to a file or a directory to scan")
-
-    # Options
     parser.add_argument("-r", "--recursive", action="store_true", help="Recursively scan directories")
-    parser.add_argument("-j", "--json", action="store_true", help="Output raw JSON data instead of a report")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Include detailed stream info in reports")
-    parser.add_argument("-o", "--log", help="Save the terminal output to a text file")
+    parser.add_argument("-j", "--json", action="store_true", help="Output raw JSON data")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Detailed output")
+    parser.add_argument("-o", "--log", help="Save results to a JSON file")
 
     args = parser.parse_args()
-    target = args.target
+    scanner = scanner_instance
+
     files_to_process = []
+    if os.path.isdir(args.target):
+        for root, _, files in os.walk(args.target):
+            for f in files:
+                files_to_process.append(os.path.join(root, f))
+            if not args.recursive: break
+    elif os.path.isfile(args.target):
+        files_to_process.append(args.target)
 
-    if os.path.isdir(target):
-        if args.recursive:
-            for root, _, files in os.walk(target):
-                for f in files:
-                    files_to_process.append(os.path.join(root, f))
-        else:
-            print(f"{PC.WARNING}[!] {target} is a directory. Use -r to scan all files inside.")
-            sys.exit(1)
-    elif os.path.isfile(target):
-        files_to_process.append(target)
-    else:
-        print(f"{PC.CRITICAL}[!] Path not found: {target}")
-        sys.exit(1)
-
-    print(f"{PC.INFO}[*] Prism started triage on {len(files_to_process)} target(s)...\n")
+    print(f"{PC.INFO}[*] Prism engine ready. Triage started on {len(files_to_process)} target(s)...\n")
 
     all_results = []
 
     for file_path in files_to_process:
-        data = triage_router(file_path)
+        try:
+            parser_data = triage_router(file_path)
+            with open(file_path, "rb") as f:
+                raw_bytes = f.read()
+            triage_data = triage(raw_bytes, scanner)
+            final_status = triage_data["Status"]
 
-        if not data:
-            print(f"{PC.WARNING}[!] Parser returned nothing for {file_path}")
+            if parser_data.get("Triggers") or any(s.get("YARA_Matches") for s in parser_data.get("Stream_Results", [])):
+                final_status = "CRITICAL"
+            elif final_status == "SUSPICIOUS" and file_path.lower().endswith(('.pdf', '.docx', '.xlsx')):
+                if not parser_data.get("Triggers"):
+                    final_status = "CLEAN (Compressed)"
+
+            triage_data["Status"] = final_status
+
+            final_report = {
+                "file_info": {
+                    "name": os.path.basename(file_path),
+                    "path": file_path,
+                    "timestamp": datetime.now().isoformat()
+                },
+                "structure": parser_data,
+                "analysis": triage_data
+            }
+
+            all_results.append(final_report)
+
+            if args.json:
+                print(json.dumps(final_report, indent=4))
+            else:
+                generate_report(final_report)
+
+        except PermissionError:
+            print(f"{PC.CRITICAL}[!] Permission Denied: {file_path}")
+        except Exception as e:
+            print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}")
             continue
-
-        if "error" in data:
-            if args.verbose:
-                print(f"{PC.DIM}[-] Skipping {os.path.basename(file_path)}: {data['error']}")
-            continue
-
-        all_results.append(data)
-
-
-        if args.json:
-            print(json.dumps(data, indent=4))
-        else:
-            generate_report(data)
 
     if args.log:
         with open(args.log, "w") as f:
-            f.write(f"Prism Scan Log - {datetime.now()}\n")
-            f.write(json.dumps(all_results, indent=2))
-        print(f"{PC.SUCCESS}[+] Results saved to {args.log}")
+            json.dump(all_results, f, indent=4)
+        print(f"\n{PC.SUCCESS}[+] Scan complete. Log saved to {args.log}")
 
 
 if __name__ == '__main__':
