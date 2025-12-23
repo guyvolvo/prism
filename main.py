@@ -15,7 +15,6 @@ from parsers.pe_parser import analyze_pe
 
 def triage_router(file_path):
     ext = os.path.splitext(file_path)[1].lower()
-
     if ext == ".pdf":
         return analyze_pdf(file_path)
     elif ext in [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".docm", ".xlsm"]:
@@ -56,19 +55,17 @@ def main():
 
     for file_path in files_to_process:
         try:
+
             parser_data = triage_router(file_path)
+            heuristics = parser_data.get("Triggers", [])
             with open(file_path, "rb") as f:
                 raw_bytes = f.read()
-            triage_data = triage(raw_bytes, scanner)
-            final_status = triage_data["Status"]
 
-            if parser_data.get("Triggers") or any(s.get("YARA_Matches") for s in parser_data.get("Stream_Results", [])):
-                final_status = "CRITICAL"
-            elif final_status == "SUSPICIOUS" and file_path.lower().endswith(('.pdf', '.docx', '.xlsx')):
-                if not parser_data.get("Triggers"):
-                    final_status = "CLEAN (Compressed)"
+            triage_data = triage(raw_bytes, scanner, heuristics=heuristics)
 
-            triage_data["Status"] = final_status
+            if file_path.lower().endswith(('.pdf', '.docx', '.xlsx')):
+                if triage_data["Status"] == "SUSPICIOUS" and not triage_data["YARA_Matches"]:
+                    triage_data["Status"] = "CLEAN (Compressed)"
 
             final_report = {
                 "file_info": {
