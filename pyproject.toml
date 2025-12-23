@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prism-triage"
+version = "1.0.0"
+authors = [
+  { name="Guy Voloshin" },
+]
+description = "A multi-format static analysis framework for malware triage."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+]
+dependencies = [
+    "pefile",
+    "olefile",
+    "colorama",
+    "yara-python",
+    "pypdf",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/guyvolvo/prism"
