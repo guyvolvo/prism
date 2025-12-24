@@ -1,3 +1,4 @@
+import base64
 import os
 import yara
 import math
@@ -146,29 +147,40 @@ def triage(file_path, data: bytes, scanner=None, api_key=None, **kwargs):
 
     is_safe, info = check_circl_whitelist(file_hash)
     if is_safe:
-        return {"Status": "TRUSTED", "Note": f"Whitelisted: {info}", "Score": 0, "YARA_Matches": [], "Heuristics": []}
+        return {"Status": "TRUSTED", "Verdict": "CLEAN", "Score": "0/10", "Yara_Matches": [], "Heuristics": []}
 
-    if scanner is None:
-        scanner = get_scanner()
-
+    scanner = scanner or get_scanner()
     yara_matches = scanner.scan_bytes(data)
     heuristics = get_content_heuristics(data)
     entropy = shannon_entropy(data)
-
-    score = 0
     reputation = check_malware_bazaar(file_hash, key=api_key)
-    time.sleep(0.5)
 
-    if reputation:
-        score += 25
-        heuristics.append(f"REPUTATION: Known Malware ({reputation.get('signature')})")
 
-    if yara_matches: score += 10
-    if entropy > 7.2: score += 2
+    has_signature = len(yara_matches) > 0
+    has_reputation = reputation is not None
 
-    status = "CRITICAL" if score >= 10 else "SUSPICIOUS" if score >= 2 else "CLEAN"
+
+    parser_status = str(kwargs.get('parser_status', 'CLEAN')).upper()
+    is_anomaly = parser_status in ["CRITICAL", "MALICIOUS", "SUSPICIOUS"]
+    is_high_entropy = entropy > 7.5
+
+    if has_signature or has_reputation:
+        status = "MALICIOUS"
+        score_val = 10
+    elif is_anomaly or is_high_entropy or heuristics:
+        status = "SUSPICIOUS"
+        score_val = 6
+    else:
+        status = "CLEAN"
+        score_val = 0
 
     return {
-        "Entropy": entropy, "YARA_Matches": yara_matches, "Score": score,
-        "Heuristics": heuristics, "Reputation": reputation, "Status": status
+        "Status": status,
+        "Verdict": status,
+        "Score": f"{score_val}/10",
+        "score": score_val,
+        "Entropy": entropy,
+        "Yara_Matches": yara_matches,
+        "Heuristics": heuristics,
+        "Reputation": reputation
     }

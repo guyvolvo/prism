@@ -75,7 +75,7 @@ def analyze_pdf(file_path):
         }
     except Exception as e:
         return {
-            "Triggers": ["CRITICAL: PDF Structure Corrupt/Malformed"],
-            "Stream_Results": brute_force_carve(file_path),
-            "Error": str(e)
+            "Status": "CRITICAL",
+            "Triggers": [f"PDF Structure Corrupt: {str(e)}"],
+            "Stream_Results": []
         }

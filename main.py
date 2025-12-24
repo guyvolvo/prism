@@ -115,91 +115,69 @@ def print_metadata_only(file_path, sha256_hash, md5_hash, mime_type):
 def process_file_worker(file_path, args, api_key, stats, results_log):
     try:
         if not os.path.exists(file_path): return
-
         with open(file_path, "rb") as f:
             raw_bytes = f.read()
 
-        file_size = len(raw_bytes)
-
-        if file_size > MAX_FILE_SIZE and not args.large:
-            with stats_lock: stats["SKIPPED"] += 1
-            return
-
-        header = raw_bytes[:4]
-        if header.startswith(b"%PDF"):
-            mime_type = "application/pdf"
-        elif header.startswith(b"PK"):
-            mime_type = "application/zip"
-        elif header.startswith(b"MZ"):
-            mime_type = "application/x-dosexec"
-        elif header.startswith(b"\x7fELF"):
-            mime_type = "application/x-executable"
-        else:
-            mime_type, _ = mimetypes.guess_type(file_path)
-            mime_type = mime_type or "application/octet-stream"
-
         sha256 = hashlib.sha256(raw_bytes).hexdigest()
-        md5 = hashlib.md5(raw_bytes).hexdigest()
-
-        report = {
-            "scan_info": {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "mime_type": mime_type},
-            "file_info": {"name": os.path.basename(file_path), "sha256": sha256, "size_bytes": file_size},
-            "analysis": {},
-            "structure": {}
-        }
-
-        if args.metadata and not args.scan:
-            print_metadata_only(file_path, sha256, md5, mime_type)
-            with stats_lock:
-                results_log.append(report)
-                stats["total"] += 1
-            return
-
-        if args.metadata:
-            print_metadata_only(file_path, sha256, md5, mime_type)
-
         scanner = get_scanner()
-        parser_data = triage_router(file_path)
-        if not isinstance(parser_data, dict):
-            parser_data = {"Status": "Unknown", "Triggers": [], "Stream_Results": []}
 
+        parser_data = triage_router(file_path)
         triage_data = triage(file_path=file_path, data=raw_bytes, scanner=scanner, api_key=api_key)
 
-        if not isinstance(triage_data, dict):
-            triage_data = {"Status": "CLEAN", "Score": 0}
+        if not isinstance(parser_data, dict): parser_data = {"Status": "CLEAN", "Triggers": []}
+        if not isinstance(triage_data, dict): triage_data = {"Status": "CLEAN", "Yara_Matches": [], "Heuristics": []}
 
-        router_status = parser_data.get("Status", "Unknown")
-        if router_status in ["SUSPICIOUS", "CRITICAL"]:
-            triage_data["Status"] = router_status
-            if "Triggers" in parser_data:
-                triage_data.setdefault("Triggers", []).extend(parser_data["Triggers"])
+        yara_matches = triage_data.get("Yara_Matches", [])
+        heuristics = triage_data.get("Heuristics", [])
+        struct_triggers = parser_data.get("Triggers", [])
 
-        report["analysis"] = triage_data
-        report["structure"] = parser_data
+        import math
+        from collections import Counter
+        entropy = 0
+        if raw_bytes:
+            counts = Counter(raw_bytes)
+            entropy = -sum((count / len(raw_bytes)) * math.log2(count / len(raw_bytes)) for count in counts.values())
+
+        high_entropy_flag = 1 if entropy > 7.7 else 0
+
+        total_indicators = len(yara_matches) + len(heuristics) + len(struct_triggers) + high_entropy_flag
+
+
+        if triage_data.get("MalwareBazaar_Found"):
+            final_status = "MALICIOUS"
+        elif total_indicators >= 3:
+            final_status = "MALICIOUS"
+        elif total_indicators >= 1:
+            final_status = "SUSPICIOUS"
+        else:
+            final_status = "CLEAN"
+
+        triage_data["Status"] = final_status
+        triage_data["Score"] = f"{min(total_indicators * 2, 10)}/10"  # Generates a score from the count
+
+        triage_data["score"] = triage_data["Score"]
+
+        report = {
+            "scan_info": {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                          "mime_type": "application/octet-stream"},
+            "file_info": {"name": os.path.basename(file_path), "sha256": sha256, "size_bytes": len(raw_bytes)},
+            "analysis": triage_data,
+            "structure": parser_data,
+            "Verdict": final_status
+        }
 
         with stats_lock:
             results_log.append(report)
-            # New Mapping Logic
-            final_status = str(triage_data.get("Status", "CLEAN")).upper()
-
-            if final_status in ["CRITICAL", "MALICIOUS"]:
-                stats["MALICIOUS"] += 1
-                report["Verdict"] = "MALICIOUS"
-                report["Severity"] = "HIGH"
+            if final_status == "MALICIOUS":
+                stats["CRITICAL"] += 1
             elif final_status == "SUSPICIOUS":
                 stats["SUSPICIOUS"] += 1
-                report["Verdict"] = "SUSPICIOUS"
-                report["Severity"] = "MEDIUM"
             else:
                 stats["CLEAN"] += 1
-                report["Verdict"] = "CLEAN"
-                report["Severity"] = "LOW"
+            stats["total"] += 1
 
         with print_lock:
-            if args.json:
-                print(json.dumps(report, indent=4, default=str))
-            else:
-                generate_report(report)
+            generate_report(report)
 
     except Exception as e:
         with print_lock:

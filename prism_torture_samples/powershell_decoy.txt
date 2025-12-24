@@ -1,0 +1,4 @@
+
+This is documentation text.
+The word powershell appears here,
+but nothing is executed.
