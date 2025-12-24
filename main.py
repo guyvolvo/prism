@@ -157,6 +157,9 @@ def main():
                 scanner = get_scanner()
                 parser_data = triage_router(file_path)
 
+                if parser_data is None:
+                    parser_data = {"Triggers": [], "Stream_Results": [], "Status": "Error"}
+
                 triage_data = triage(
                     file_path=file_path,
                     data=raw_bytes,
@@ -164,8 +167,17 @@ def main():
                     api_key=api_key
                 )
 
-                all_triggers = triage_data.get("YARA_Matches", []) + triage_data.get("Heuristics", [])
-                triage_data["Triggers"] = all_triggers
+                if triage_data is None:
+                    triage_data = {
+                        "Status": "CLEAN",
+                        "YARA_Matches": [],
+                        "Heuristics": [],
+                        "Score": 0
+                    }
+
+                yara_matches = triage_data.get("YARA_Matches") or []
+                heuristics = triage_data.get("Heuristics") or []
+                triage_data["Triggers"] = yara_matches + heuristics
 
                 final_report = {
                     "file_info": {
