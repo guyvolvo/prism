@@ -106,10 +106,15 @@ def main():
 
     files_to_process = []
     if os.path.isdir(args.target):
-        for root, _, files in os.walk(args.target):
-            for f in files:
-                files_to_process.append(os.path.join(root, f))
-            if not args.recursive: break
+        if args.recursive:
+            for root, _, files in os.walk(args.target):
+                for f in files:
+                    files_to_process.append(os.path.join(root, f))
+        else:
+            for item in os.listdir(args.target):
+                full_path = os.path.join(args.target, item)
+                if os.path.isfile(full_path):
+                    files_to_process.append(full_path)
     elif os.path.isfile(args.target):
         files_to_process.append(args.target)
     else:
