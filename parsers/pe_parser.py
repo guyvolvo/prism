@@ -1,6 +1,6 @@
 import pefile
 import os
-from core.scanner import triage, shannon_entropy
+from core.scanner import shannon_entropy
 
 
 def analyze_pe(file_path):
@@ -61,14 +61,15 @@ def analyze_pe(file_path):
         if section_name and section_name not in standard_sections:
             final_report["Triggers"].append(f"UNUSUAL SECTION NAME: {section_name}")
 
-        result = triage(section_data)
-        result["Section_Name"] = section_name
-        result["Entropy"] = entropy
-        result["Preview_Bytes"] = section_data[:1024]
+        result = {
+            "Section_Name": section_name,
+            "Entropy": round(entropy, 2),
+            "Size": len(section_data),
+            "Requires_Deep_RE": True if entropy > 7.4 else False,
+            "Preview_Bytes": section_data[:64]
+        }
 
-        if section_name == ".text" and (result.get("Requires_Deep_RE") or entropy > 7.4):
+        if section_name == ".text" and result["Requires_Deep_RE"]:
             final_report["Triggers"].append(f"Packed/Encrypted Code Section: {section_name}")
 
         final_report["Stream_Results"].append(result)
-
-    return final_report
