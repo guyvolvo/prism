@@ -178,22 +178,21 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
         report["structure"] = parser_data
 
         with stats_lock:
-            with stats_lock:
-                results_log.append(report)
+            results_log.append(report)
 
-                r_status = parser_data.get("Status", "Unknown").upper()
-                a_status = triage_data.get("Status", "CLEAN").upper()
+            r_status = str(parser_data.get("Status", "Unknown")).upper()
+            a_status = str(triage_data.get("Status", "CLEAN")).upper()
 
-                if r_status == "CRITICAL" or a_status == "MALICIOUS" or a_status == "CRITICAL":
-                    stats["CRITICAL"] += 1
-                elif r_status == "SUSPICIOUS" or a_status == "SUSPICIOUS":
-                    stats["SUSPICIOUS"] += 1
-                elif r_status == "TRUSTED" or a_status == "TRUSTED":
-                    stats["TRUSTED"] += 1
-                else:
-                    stats["CLEAN"] += 1
+            if "CRITICAL" in r_status or "MALICIOUS" in a_status or "CRITICAL" in a_status:
+                stats["CRITICAL"] += 1
+            elif "SUSPICIOUS" in r_status or "SUSPICIOUS" in a_status:
+                stats["SUSPICIOUS"] += 1
+            elif "TRUSTED" in r_status or "TRUSTED" in a_status:
+                stats["TRUSTED"] += 1
+            else:
+                stats["CLEAN"] += 1
 
-                stats["total"] += 1
+            stats["total"] += 1
 
         with print_lock:
             if args.json:
