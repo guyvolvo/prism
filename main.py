@@ -35,14 +35,18 @@ print_lock = threading.Lock()
 
 def resolve_api_key(args_api):
     env_path = find_dotenv() or os.path.join(current_dir, '.env')
+
     if isinstance(args_api, str):
         clean_key = args_api.strip("'").strip('"')
+        with print_lock:
+            print(f"{PC.INFO}[+] API Key provided via command line. Saving to {env_path}...{PC.RESET}")
         try:
             set_key(env_path, "BAZAAR_API_KEY", clean_key)
             os.environ["BAZAAR_API_KEY"] = clean_key
             return clean_key
         except Exception:
             return clean_key
+
     raw_key = os.getenv("BAZAAR_API_KEY")
     return raw_key.strip("'").strip('"') if raw_key else None
 
@@ -91,22 +95,21 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
         if args.metadata:
             print_metadata_only(file_path, sha256, md5, mime_type)
-            if not args.scan:
-                return
-
-        file_scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if not args.scan: return
 
         scanner = get_scanner()
         parser_data = triage_router(file_path) or {"Status": "Error"}
+
         triage_data = triage(file_path=file_path, data=raw_bytes, scanner=scanner, api_key=api_key)
 
         if not triage_data:
             triage_data = {"Status": "CLEAN", "Score": 0}
 
         report = {
-            "scan_info": {"timestamp": file_scan_time, "mime_type": mime_type},
+            "scan_info": {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "mime_type": mime_type},
             "file_info": {"name": os.path.basename(file_path), "sha256": sha256, "size_bytes": file_size},
-            "analysis": triage_data
+            "analysis": triage_data,
+            "structure": parser_data
         }
 
         with stats_lock:
@@ -123,8 +126,7 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
     except Exception as e:
         with print_lock:
-            err_msg = str(e) if "(2," not in str(e) else "File/Symlink target not found"
-            print(f"{PC.CRITICAL}[!] Error processing {file_path}: {err_msg}{PC.RESET}")
+            print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}{PC.RESET}")
 
 
 def main():
@@ -137,10 +139,14 @@ def main():
     parser.add_argument("-s", "--scan", action="store_true", help="Force scan with metadata")
     parser.add_argument("-t", "--threads", type=int, default=4, help="Threads (Default: 4)")
     parser.add_argument("--large", action="store_true", help="Bypass 100MB limit")
-    parser.add_argument("--api", nargs='?', const=True)
+    parser.add_argument("--api", nargs='?', const=True, help="API Key for online lookups")
     args = parser.parse_args()
 
     api_key = resolve_api_key(args.api)
+
+    if args.api and not args.target:
+        return
+
     if not args.target:
         print(f"{PC.CRITICAL}[!] Error: No target provided.{PC.RESET}")
         sys.exit(1)
@@ -157,10 +163,13 @@ def main():
 
     results_log = []
     stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0, "SKIPPED": 0, "TRUSTED": 0}
-
     start_time = datetime.now()
 
     print(f"{PC.INFO}[*] Prism Engine Ready. Workers: {args.threads} | Targets: {len(files_to_process)}{PC.RESET}\n")
+    if api_key:
+        print(f"{PC.SUCCESS}[+] API Connection established.{PC.RESET}")
+    else:
+        print(f"{PC.WARNING}[!] Running without API Key (Offline Mode).{PC.RESET}")
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
@@ -169,11 +178,9 @@ def main():
             for future in concurrent.futures.as_completed(futures):
                 future.result()
     except KeyboardInterrupt:
-        print(f"\n{PC.WARNING}[!] User interrupted scan. Displaying partial results...{PC.RESET}")
+        print(f"\n{PC.WARNING}[!] User interrupted scan.{PC.RESET}")
 
-    end_time = datetime.now()
-    duration = end_time - start_time
-
+    duration = datetime.now() - start_time
     if stats["total"] > 0 or stats["SKIPPED"] > 0:
         print(f"\n{PC.HEADER}{'=' * 30} SESSION SUMMARY {'=' * 30}{PC.RESET}")
         print(f"Scan Duration:       {duration.total_seconds():.2f} seconds")
@@ -181,7 +188,6 @@ def main():
         print(f"{PC.CRITICAL}Malicious:           {stats.get('CRITICAL', 0)}{PC.RESET}")
         print(f"{PC.WARNING}Suspicious:          {stats.get('SUSPICIOUS', 0)}{PC.RESET}")
         print(f"{PC.SUCCESS}Clean:               {stats.get('CLEAN', 0)}{PC.RESET}")
-        if stats.get('TRUSTED'): print(f"{PC.SUCCESS}Whitelisted:         {stats.get('TRUSTED', 0)}{PC.RESET}")
         if stats["SKIPPED"] > 0: print(f"{PC.WARNING}Skipped (>100MB):    {stats['SKIPPED']}{PC.RESET}")
         print(f"{PC.HEADER}{'=' * 77}{PC.RESET}")
 
