@@ -1,13 +1,11 @@
 import os
 import sys
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vendor_path = os.path.join(current_dir, 'vendor')
 
 if os.path.exists(vendor_path) and vendor_path not in sys.path:
     sys.path.insert(0, vendor_path)
-
 
 import argparse
 import json
@@ -15,12 +13,10 @@ import hashlib
 import mimetypes
 from datetime import datetime
 
-
 try:
-    from dotenv import load_dotenv
-    load_dotenv()
+    from dotenv import load_dotenv, find_dotenv
+    load_dotenv(find_dotenv())
 except ImportError:
-
     pass
 
 from colors import PrismColors as PC
@@ -42,10 +38,8 @@ def triage_router(file_path):
     else:
         return {"Stream_Results": [], "Triggers": [], "Status": "Unknown/Raw"}
 
-
 def print_metadata_only(file_path, sha256_hash, md5_hash):
     stats = os.stat(file_path)
-
     print(f"{PC.HEADER}--- PRISM METADATA: {os.path.basename(file_path)} ---{PC.RESET}")
     print(f"{PC.INFO}File Info:{PC.RESET}")
     print(f"  Path:      {file_path}")
@@ -60,7 +54,6 @@ def print_metadata_only(file_path, sha256_hash, md5_hash):
     print(f"  MD5:       {PC.WARNING}{md5_hash}{PC.RESET}")
     print(f"  SHA256:    {PC.WARNING}{sha256_hash}{PC.RESET}")
     print("-" * 55 + "\n")
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -139,7 +132,6 @@ def main():
         except Exception as e:
             print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}")
             continue
-
 
 if __name__ == '__main__':
     main()
