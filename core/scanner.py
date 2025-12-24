@@ -16,6 +16,7 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_API_KEY = os.getenv("BAZAAR_API_KEY")
 
+_scanner_instance = None
 
 class PrismScanner:
     def __init__(self):
@@ -63,6 +64,7 @@ class PrismScanner:
 
 def get_secure_session():
     session = requests.Session()
+    session.headers.update({"User-Agent": "Prism-Scanner/1.0 (UserAgent-2025-12-19)"})
     retry_strategy = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
     session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
     return session
@@ -72,7 +74,6 @@ _session = get_secure_session()
 
 
 def get_file_hash(file_path):
-    """Calculates SHA-256 hash in 64kb chunks to handle large files"""
     sha256_hash = hashlib.sha256()
     try:
         with open(file_path, "rb") as f:
@@ -84,7 +85,6 @@ def get_file_hash(file_path):
 
 
 def check_circl_whitelist(file_hash):
-    """Queries CIRCL Hashlookup (NSRL/NIST)"""
     url = f"https://hashlookup.circl.lu/lookup/sha256/{file_hash}"
     try:
         response = _session.get(url, timeout=3)
@@ -102,7 +102,7 @@ def check_malware_bazaar(file_hash: str, key: str = None):
     active_key = key or DEFAULT_API_KEY
     if not active_key: return None
     url = "https://mb-api.abuse.ch/api/v1/"
-    headers = {"Auth-Key": active_key.strip("'\""), "User-Agent": "Prism-Malware-Scanner/1.0"}
+    headers = {"Auth-Key": active_key.strip("'\"")}
     try:
         response = _session.post(url, data={'query': 'get_info', 'hash': file_hash}, headers=headers, timeout=5)
         if response.status_code == 200 and response.json().get('query_status') == 'ok':
@@ -122,14 +122,12 @@ def shannon_entropy(data: bytes) -> float:
 def get_content_heuristics(data: bytes):
     h_list = []
     content = data.decode('utf-8', errors='ignore').lower()
-
     patterns = {
         r"powershell": "PowerShell",
         r"eval\(": "Dynamic Code",
         r"base64": "Encoded Payload",
         r"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}": "Raw IP Downloader"
     }
-
     for pattern, label in patterns.items():
         if re.search(pattern, content):
             h_list.append(f"Content Match: {label}")
@@ -138,19 +136,21 @@ def get_content_heuristics(data: bytes):
 
 def get_scanner():
     global _scanner_instance
-    if _scanner_instance is None: _scanner_instance = PrismScanner()
+    if _scanner_instance is None:
+        _scanner_instance = PrismScanner()
     return _scanner_instance
 
 
 def triage(file_path, data: bytes, scanner=None, api_key=None):
     file_hash = get_file_hash(file_path)
 
-    # NIST Whitelist Check (CIRCL)
     is_safe, info = check_circl_whitelist(file_hash)
     if is_safe:
         return {"Status": "TRUSTED", "Note": f"Whitelisted: {info}", "Score": 0, "YARA_Matches": [], "Heuristics": []}
 
-    if scanner is None: scanner = get_scanner()
+    if scanner is None:
+        scanner = get_scanner()
+
     yara_matches = scanner.scan_bytes(data)
     heuristics = get_content_heuristics(data)
     entropy = shannon_entropy(data)
@@ -158,6 +158,7 @@ def triage(file_path, data: bytes, scanner=None, api_key=None):
     score = 0
     reputation = check_malware_bazaar(file_hash, key=api_key)
     time.sleep(0.5)
+
     if reputation:
         score += 25
         heuristics.append(f"REPUTATION: Known Malware ({reputation.get('signature')})")
