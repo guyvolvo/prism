@@ -15,7 +15,6 @@ if os.path.exists(vendor_path) and vendor_path not in sys.path:
 
 try:
     from dotenv import load_dotenv, find_dotenv, set_key
-
     load_dotenv(find_dotenv())
 except ImportError:
     pass
@@ -32,9 +31,9 @@ MAX_FILE_SIZE = 100 * 1024 * 1024
 stats_lock = threading.Lock()
 print_lock = threading.Lock()
 
-
 def resolve_api_key(args_api):
     env_path = find_dotenv() or os.path.join(current_dir, '.env')
+    existing_key = os.getenv("BAZAAR_API_KEY")
 
     if isinstance(args_api, str):
         clean_key = args_api.strip("'").strip('"')
@@ -44,11 +43,21 @@ def resolve_api_key(args_api):
             set_key(env_path, "BAZAAR_API_KEY", clean_key)
             os.environ["BAZAAR_API_KEY"] = clean_key
             return clean_key
-        except Exception:
+        except Exception as e:
+            with print_lock:
+                print(f"{PC.CRITICAL}[!] Error saving key: {e}{PC.RESET}")
             return clean_key
 
-    raw_key = os.getenv("BAZAAR_API_KEY")
-    return raw_key.strip("'").strip('"') if raw_key else None
+    if args_api is True:
+        with print_lock:
+            if existing_key:
+                masked = f"{existing_key[:4]}...{existing_key[-4:]}"
+                print(f"{PC.INFO}[*] Current API Key: {PC.WARNING}{masked}{PC.RESET} (Loaded from {env_path})")
+            else:
+                print(f"{PC.CRITICAL}[!] No keys are loaded. Use --api <KEY> to set one.{PC.RESET}")
+        return existing_key
+
+    return existing_key.strip("'").strip('"') if existing_key else None
 
 
 def triage_router(file_path):
@@ -99,7 +108,6 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
         scanner = get_scanner()
         parser_data = triage_router(file_path) or {"Status": "Error"}
-
         triage_data = triage(file_path=file_path, data=raw_bytes, scanner=scanner, api_key=api_key)
 
         if not triage_data:
@@ -139,13 +147,13 @@ def main():
     parser.add_argument("-s", "--scan", action="store_true", help="Force scan with metadata")
     parser.add_argument("-t", "--threads", type=int, default=4, help="Threads (Default: 4)")
     parser.add_argument("--large", action="store_true", help="Bypass 100MB limit")
-    parser.add_argument("--api", nargs='?', const=True, help="API Key for online lookups")
+    parser.add_argument("--api", nargs='?', const=True, help="Set, update, or view API key")
     args = parser.parse_args()
 
     api_key = resolve_api_key(args.api)
 
-    if args.api and not args.target:
-        return
+    if args.api is not None and not args.target:
+        sys.exit(0)
 
     if not args.target:
         print(f"{PC.CRITICAL}[!] Error: No target provided.{PC.RESET}")
