@@ -13,7 +13,6 @@ def analyze_pe(file_path):
                 raw_data = f.read()
 
             entropy_val = shannon_entropy(raw_data)
-
             return {
                 "File": file_path,
                 "Triggers": ["MALFORMED PE HEADER: Analyzed as raw binary"],
@@ -33,9 +32,15 @@ def analyze_pe(file_path):
         "Stream_Results": []
     }
 
+    overlay_offset = pe.get_overlay_data_start_offset()
+    if overlay_offset:
+        overlay_size = len(pe.get_overlay())
+        if overlay_size > 102400:
+            final_report["Triggers"].append(f"LARGE OVERLAY DETECTED: {overlay_size} bytes")
+
     suspicious_apis = [
         "VirtualAlloc", "WriteProcessMemory",
-        "CreateRemoteThread", "IsDebuggerPresent"
+        "CreateRemoteThread", "IsDebuggerPresent", "VirtualProtect"
     ]
 
     if hasattr(pe, 'DIRECTORY_ENTRY_IMPORT'):
@@ -46,17 +51,23 @@ def analyze_pe(file_path):
                     if name in suspicious_apis:
                         final_report["Triggers"].append(f"Suspicious API: {name}")
 
-    # Section Analysis
+    standard_sections = [".text", ".data", ".rdata", ".idata", ".rsrc", ".reloc"]
+
     for section in pe.sections:
         section_name = section.Name.decode('utf-8', errors='ignore').strip('\x00')
         section_data = section.get_data()
+        entropy = section.get_entropy()
+
+        if section_name and section_name not in standard_sections:
+            final_report["Triggers"].append(f"UNUSUAL SECTION NAME: {section_name}")
 
         result = triage(section_data)
         result["Section_Name"] = section_name
+        result["Entropy"] = entropy
         result["Preview_Bytes"] = section_data[:1024]
 
-        if section_name == ".text" and result.get("Requires_Deep_RE"):
-            final_report["Triggers"].append("High Entropy Code Section (Likely Packed)")
+        if section_name == ".text" and (result.get("Requires_Deep_RE") or entropy > 7.4):
+            final_report["Triggers"].append(f"Packed/Encrypted Code Section: {section_name}")
 
         final_report["Stream_Results"].append(result)
 
