@@ -64,42 +64,37 @@ def resolve_api_key(args_api):
 
 def triage_router(file_path):
     try:
+        # Read the first 2048 bytes to find hidden headers
         with open(file_path, "rb") as f:
-            header = f.read(4)
+            chunk = f.read(2048)
     except Exception:
-        header = b""
+        chunk = b""
 
     def format_binary_alert(os_type, stream_msg):
         return {
             "Status": "CRITICAL",
-            "Triggers": ["Hidden Executable", "Malformed"],
-            "Stream_Results": [
-                {
-                    "Section_Name": stream_msg,
-                    "Entropy": 7.9
-                }
-            ],
-            "Heuristic Alerts": [f"CRITICAL: Hidden {os_type} binary detected via magic bytes"]
+            "Triggers": ["Hidden Executable", "Malformed", "Polyglot Detected"],
+            "Stream_Results": [{"Section_Name": stream_msg, "Entropy": 7.9}],
+            "Heuristic Alerts": [f"CRITICAL: Hidden {os_type} binary discovered inside {os.path.splitext(file_path)[1]}"]
         }
 
-    if header.startswith(b"%PDF"):
-        return analyze_pdf(file_path)
-    elif header.startswith(b"PK\x03\x04"):
-        return analyze_office(file_path)
-    elif header.startswith(b"MZ"):
-        return analyze_pe(file_path)
-    elif header.startswith(b"\x7fELF"):
-        return format_binary_alert("Linux", "Linux ELF Binary")
-    elif header in [b"\xca\xfe\xba\xbe", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xce"]:
-        return format_binary_alert("macOS", "macOS Mach-O Binary")
+    if b"\x7fELF" in chunk:
+        if not chunk.startswith(b"\x7fELF"):
+            return format_binary_alert("Linux", "Embedded ELF Binary")
+        return {"Status": "SUSPICIOUS", "Triggers": ["Linux Binary"], "Stream_Results": []}
 
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext == ".pdf":
-        return analyze_pdf(file_path)
-    elif ext in [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".docm", ".xlsm"]:
-        return analyze_office(file_path)
-    elif ext in [".exe", ".dll", ".bin", ".sys", ".com"]:
+    if b"MZ" in chunk:
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in [".exe", ".dll", ".sys"]:
+            return format_binary_alert("Windows", "Embedded PE Binary")
         return analyze_pe(file_path)
+
+    if b"%PDF" in chunk:
+        return analyze_pdf(file_path)
+
+    for magic in [b"\xca\xfe\xba\xbe", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xce"]:
+        if magic in chunk:
+            return format_binary_alert("macOS", "Embedded Mach-O Binary")
 
     return {"Stream_Results": [], "Triggers": [], "Status": "Unknown"}
 
