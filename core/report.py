@@ -85,8 +85,10 @@ def generate_report(data):
 
     if reputation:
         verdict = "MALICIOUS (Known Reputation)"
-    elif (is_malformed or has_high_entropy_stream) and "CRITICAL" not in verdict:
-        if verdict == "CLEAN":
+    elif is_malformed or has_high_entropy_stream:
+        if verdict == "CRITICAL":
+            verdict = "MALICIOUS (Structural Critical)"
+        elif verdict == "CLEAN":
             verdict = "SUSPICIOUS (Structural Anomaly)"
 
     if "CRITICAL" in verdict or "MALICIOUS" in verdict:
