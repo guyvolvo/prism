@@ -4,10 +4,13 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "prism-triage"
-version = "1.0.0"
-authors = [
-  { name="Guy Voloshin" },
+name = "prism"
+version = "0.1.0"
+dependencies = [
+    "yara-python",
+    "requests",
+    "python-dotenv",
+    "urllib3"
 ]
 description = "A multi-format static analysis framework for malware triage."
 readme = "README.md"
