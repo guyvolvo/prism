@@ -4,6 +4,7 @@ import math
 import re
 import requests
 import time
+import shutil
 from collections import Counter
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
@@ -25,32 +26,42 @@ class PrismScanner:
             os.path.join(BASE_DIR, "packers"),
             os.path.join(BASE_DIR, "webshells")
         ]
-        print(f"[*] Initializing Scanner. Rule folders: {', '.join(self.rule_folders)}")
+        self.quarantine_path = os.path.join(BASE_DIR, "broken_rules")
+        os.makedirs(self.quarantine_path, exist_ok=True)
+
+        print(f"[*] Initializing Scanner. Loading active rule sets...")
         self.rules = self._compile_all_rules()
 
     def _compile_all_rules(self):
-        rule_map = {}
         valid_rules = {}
 
         for folder in self.rule_folders:
-            if not os.path.exists(folder): continue
+            if not os.path.exists(folder):
+                continue
+
             for root, _, files in os.walk(folder):
                 for file in files:
                     if file.endswith(('.yar', '.yara')):
                         path = os.path.join(root, file)
-                        rule_map[path] = file
+                        try:
+                            yara.compile(filepath=path)
 
-        for path, name in rule_map.items():
-            try:
-                yara.compile(filepath=path)
-                namespace = os.path.basename(os.path.dirname(path))
-                if namespace in ['rules', 'prism']: namespace = 'general'
-                valid_rules[f"{namespace}_{name}"] = path
-            except yara.SyntaxError:
-                print(f"\033[1;33m[!] Skipping Broken Rule:\033[0m {name}")
-                continue
+                            namespace = os.path.basename(root)
+                            if namespace in ['rules', 'prism', 'malware', 'maldocs']:
+                                namespace = 'gen'
+
+                            valid_rules[f"{namespace}_{file}"] = path
+
+                        except yara.SyntaxError as e:
+                            print(f"\033[1;33m[!] Quarantining Broken Rule:\033[0m {file} (Reason: {e})")
+                            try:
+                                shutil.move(path, os.path.join(self.quarantine_path, file))
+                            except Exception as move_err:
+                                print(f"[!] Failed to move {file}: {move_err}")
+                            continue
 
         if not valid_rules:
+            print("[!] Warning: No valid YARA rules could be compiled.")
             return None
 
         try:
@@ -58,7 +69,7 @@ class PrismScanner:
             print(f"[+] Successfully compiled {len(valid_rules)} YARA rules.")
             return compiled
         except Exception as e:
-            print(f"[!] Critical Compiler Error: {e}")
+            print(f"[!] Critical Final Compilation Error: {e}")
             return None
 
     def scan_bytes(self, data: bytes):
@@ -72,6 +83,7 @@ class PrismScanner:
             return ["error:scan_timeout"]
         except Exception as e:
             return [f"error:{str(e)}"]
+
 
 
 def get_secure_session():
@@ -91,26 +103,13 @@ _session = get_secure_session()
 
 
 def check_malware_bazaar(file_hash: str, key: str = None):
-    """
-    Queries MalwareBazaar for hash reputation
-    """
     active_key = key or DEFAULT_API_KEY
-
-    if not active_key:
-        return None
+    if not active_key: return None
 
     active_key = active_key.strip("'").strip('"')
-
     url = "https://mb-api.abuse.ch/api/v1/"
-    headers = {
-        "Auth-Key": active_key,
-        "User-Agent": "Prism-Malware-Scanner/1.0"
-    }
-
-    query_data = {
-        'query': 'get_info',
-        'hash': file_hash
-    }
+    headers = {"Auth-Key": active_key, "User-Agent": "Prism-Malware-Scanner/1.0"}
+    query_data = {'query': 'get_info', 'hash': file_hash}
 
     try:
         response = _session.post(url, data=query_data, headers=headers, timeout=5)
@@ -120,7 +119,6 @@ def check_malware_bazaar(file_hash: str, key: str = None):
                 return res_json['data'][0]
     except Exception as e:
         print(f"[!] MalwareBazaar Connection Error: {e}")
-
     return None
 
 
@@ -154,6 +152,7 @@ def get_content_heuristics(data: bytes):
     return h_list
 
 
+
 _scanner_instance = None
 
 
@@ -167,6 +166,7 @@ def get_scanner():
 def triage(data: bytes, scanner=None, heuristics=None, file_hash=None, api_key=None):
     if scanner is None:
         scanner = get_scanner()
+
     if heuristics is None:
         heuristics = []
 
