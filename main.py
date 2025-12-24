@@ -179,18 +179,21 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
         with stats_lock:
             results_log.append(report)
+            # New Mapping Logic
             final_status = str(triage_data.get("Status", "CLEAN")).upper()
 
-            if "CRITICAL" in final_status or "MALICIOUS" in final_status:
-                stats["CRITICAL"] += 1
-            elif "SUSPICIOUS" in final_status:
+            if final_status in ["CRITICAL", "MALICIOUS"]:
+                stats["MALICIOUS"] += 1
+                report["Verdict"] = "MALICIOUS"
+                report["Severity"] = "HIGH"
+            elif final_status == "SUSPICIOUS":
                 stats["SUSPICIOUS"] += 1
-            elif "TRUSTED" in final_status:
-                stats["TRUSTED"] += 1
+                report["Verdict"] = "SUSPICIOUS"
+                report["Severity"] = "MEDIUM"
             else:
                 stats["CLEAN"] += 1
-
-            stats["total"] += 1
+                report["Verdict"] = "CLEAN"
+                report["Severity"] = "LOW"
 
         with print_lock:
             if args.json:
