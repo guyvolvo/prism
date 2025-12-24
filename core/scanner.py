@@ -19,7 +19,11 @@ class PrismScanner:
     def __init__(self):
         self.rule_folders = [
             os.path.join(BASE_DIR, "malware"),
-            os.path.join(BASE_DIR, "maldocs")
+            os.path.join(BASE_DIR, "maldocs"),
+            os.path.join(BASE_DIR, "antidebug_antivm"),
+            os.path.join(BASE_DIR, "capabilities"),
+            os.path.join(BASE_DIR, "packers"),
+            os.path.join(BASE_DIR, "webshells")
         ]
         print(f"[*] Initializing Scanner. Rule folders: {', '.join(self.rule_folders)}")
         self.rules = self._compile_all_rules()
