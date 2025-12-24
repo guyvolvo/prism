@@ -58,6 +58,19 @@ def triage_router(file_path):
     return {"Stream_Results": [], "Triggers": [], "Status": "Unknown"}
 
 
+def print_metadata_only(file_path, sha256_hash, md5_hash, mime_type):
+    stats = os.stat(file_path)
+    with print_lock:
+        print(f"{PC.HEADER}--- PRISM METADATA: {os.path.basename(file_path)} ---{PC.RESET}")
+        print(f"{PC.INFO}File Info:{PC.RESET}")
+        print(f"  Path:      {file_path}\n  Size:      {stats.st_size} bytes")
+        print(f"  MIME Type: {mime_type}")
+        print(f"\n{PC.INFO}Fingerprints:{PC.RESET}")
+        print(f"  MD5:       {PC.WARNING}{md5_hash}{PC.RESET}")
+        print(f"  SHA256:    {PC.WARNING}{sha256_hash}{PC.RESET}")
+        print("-" * 55 + "\n")
+
+
 def process_file_worker(file_path, args, api_key, stats, results_log):
     try:
         if not os.path.exists(file_path): return
@@ -74,6 +87,12 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             raw_bytes = f.read()
 
         sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        md5 = hashlib.md5(raw_bytes).hexdigest()
+
+        if args.metadata:
+            print_metadata_only(file_path, sha256, md5, mime_type)
+            if not args.scan:
+                return
 
         file_scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -85,15 +104,8 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             triage_data = {"Status": "CLEAN", "Score": 0}
 
         report = {
-            "scan_info": {
-                "timestamp": file_scan_time,
-                "mime_type": mime_type
-            },
-            "file_info": {
-                "name": os.path.basename(file_path),
-                "sha256": sha256,
-                "size_bytes": file_size
-            },
+            "scan_info": {"timestamp": file_scan_time, "mime_type": mime_type},
+            "file_info": {"name": os.path.basename(file_path), "sha256": sha256, "size_bytes": file_size},
             "analysis": triage_data
         }
 
@@ -111,7 +123,8 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
     except Exception as e:
         with print_lock:
-            print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}{PC.RESET}")
+            err_msg = str(e) if "(2," not in str(e) else "File/Symlink target not found"
+            print(f"{PC.CRITICAL}[!] Error processing {file_path}: {err_msg}{PC.RESET}")
 
 
 def main():
@@ -120,6 +133,8 @@ def main():
     parser.add_argument("-r", "--recursive", action="store_true", help="Recursive scan")
     parser.add_argument("-j", "--json", action="store_true", help="Raw JSON output")
     parser.add_argument("-o", "--log", help="Save to JSON file")
+    parser.add_argument("-m", "--metadata", action="store_true", help="Metadata only")
+    parser.add_argument("-s", "--scan", action="store_true", help="Force scan with metadata")
     parser.add_argument("-t", "--threads", type=int, default=4, help="Threads (Default: 4)")
     parser.add_argument("--large", action="store_true", help="Bypass 100MB limit")
     parser.add_argument("--api", nargs='?', const=True)
@@ -166,10 +181,8 @@ def main():
         print(f"{PC.CRITICAL}Malicious:           {stats.get('CRITICAL', 0)}{PC.RESET}")
         print(f"{PC.WARNING}Suspicious:          {stats.get('SUSPICIOUS', 0)}{PC.RESET}")
         print(f"{PC.SUCCESS}Clean:               {stats.get('CLEAN', 0)}{PC.RESET}")
-        if stats.get('TRUSTED'):
-            print(f"{PC.SUCCESS}Whitelisted:         {stats.get('TRUSTED', 0)}{PC.RESET}")
-        if stats["SKIPPED"] > 0:
-            print(f"{PC.WARNING}Skipped (>100MB):    {stats['SKIPPED']}{PC.RESET}")
+        if stats.get('TRUSTED'): print(f"{PC.SUCCESS}Whitelisted:         {stats.get('TRUSTED', 0)}{PC.RESET}")
+        if stats["SKIPPED"] > 0: print(f"{PC.WARNING}Skipped (>100MB):    {stats['SKIPPED']}{PC.RESET}")
         print(f"{PC.HEADER}{'=' * 77}{PC.RESET}")
 
     if args.log:
