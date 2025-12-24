@@ -35,7 +35,6 @@ def resolve_api_key(args_api):
 
     if isinstance(args_api, str):
         clean_key = args_api.strip("'").strip('"')
-
         print(f"{PC.INFO}[+] API Key provided via command line.")
         print(f"[*] Saving/Updating API Key in {env_path} ...{PC.RESET}")
         try:
@@ -49,7 +48,6 @@ def resolve_api_key(args_api):
     raw_key = os.getenv("BAZAAR_API_KEY")
     if raw_key:
         return raw_key.strip("'").strip('"')
-
     return None
 
 def triage_router(file_path):
@@ -95,23 +93,18 @@ def main():
 
     if args.api is not None and not args.target:
         if api_key:
-            if args.api is not True:
-                print(f"{PC.SUCCESS}[+] API Configuration updated and saved.")
+            if isinstance(args.api, str):
+                print(f"{PC.SUCCESS}[+] API Configuration updated and saved.{PC.RESET}")
             else:
                 print(f"{PC.INFO}[*] Current stored API Key: {api_key}{PC.RESET}")
         else:
-            print(f"{PC.WARNING}[!] No API Key is currently stored. Run with --api <key> to save one.{PC.RESET}")
-
+            print(f"{PC.WARNING}[!] No API Key found. Run with --api <key> to save one.{PC.RESET}")
         return
 
     if not args.target:
-        print(f"{PC.CRITICAL}[!] Error: No target provided and no API key configuration requested.{PC.RESET}")
+        print(f"{PC.CRITICAL}[!] Error: No target provided.{PC.RESET}")
         parser.print_help()
         sys.exit(1)
-
-    if not api_key:
-        print(f"{PC.WARNING}[!] Warning: No API Key found. MalwareBazaar lookups will be skipped.")
-        print(f"[*] To set one, run with: --api YOUR_KEY_HERE{PC.RESET}")
 
     files_to_process = []
     if os.path.isdir(args.target):
@@ -121,6 +114,12 @@ def main():
             if not args.recursive: break
     elif os.path.isfile(args.target):
         files_to_process.append(args.target)
+    else:
+        print(f"{PC.CRITICAL}[!] Error: Target '{args.target}' not found.{PC.RESET}")
+        sys.exit(1)
+
+    results_log = []
+    stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0}
 
     mode_text = "Metadata Mode" if (args.metadata and not args.scan) else "Full Triage"
     print(f"{PC.INFO}[*] Prism engine ready. Mode: {mode_text} | Targets: {len(files_to_process)}\n")
@@ -158,11 +157,17 @@ def main():
                     "name": os.path.basename(file_path),
                     "path": file_path,
                     "timestamp": datetime.now().isoformat(),
-                    "sha256": file_sha256
+                    "sha256": file_sha256,
+                    "md5": file_md5
                 },
                 "structure": parser_data,
                 "analysis": triage_data
             }
+
+            results_log.append(final_report)
+            status = triage_data.get("Status", "CLEAN")
+            stats[status] = stats.get(status, 0) + 1
+            stats["total"] += 1
 
             if args.json:
                 print(json.dumps(final_report, indent=4))
@@ -172,6 +177,22 @@ def main():
         except Exception as e:
             print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}")
             continue
+
+    if stats["total"] > 0:
+        print(f"\n{PC.HEADER}{'='*30} SESSION SUMMARY {'='*30}{PC.RESET}")
+        print(f"Total Files Scanned: {stats['total']}")
+        print(f"{PC.CRITICAL}Malicious/Critical: {stats['CRITICAL']}{PC.RESET}")
+        print(f"{PC.WARNING}Suspicious:         {stats['SUSPICIOUS']}{PC.RESET}")
+        print(f"{PC.SUCCESS}Clean:              {stats['CLEAN']}{PC.RESET}")
+        print(f"{PC.HEADER}{'='*77}{PC.RESET}")
+
+    if args.log:
+        try:
+            with open(args.log, 'w', encoding='utf-8') as f:
+                json.dump(results_log, f, indent=4)
+            print(f"\n{PC.SUCCESS}[+] Analysis log saved to: {args.log}{PC.RESET}")
+        except Exception as e:
+            print(f"\n{PC.CRITICAL}[!] Failed to write log file: {e}{PC.RESET}")
 
 if __name__ == '__main__':
     main()
