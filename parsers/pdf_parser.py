@@ -1,30 +1,27 @@
 import re
 import zlib
 from PyPDF2 import PdfReader
-from core.scanner import triage, scanner_instance, shannon_entropy
+from core.scanner import triage, get_scanner, shannon_entropy
 
 
 def brute_force_carve(file_path):
-
     with open(file_path, "rb") as f:
         data = f.read()
 
     carved_results = []
-
     stream_pattern = re.compile(b"stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
-
-
     hex_obfuscation = bool(re.search(b"/[#0-9a-fA-F]{2,}", data))
+
+    scanner = get_scanner()
 
     for idx, match in enumerate(stream_pattern.finditer(data)):
         stream_content = match.group(1)
-
         try:
             stream_content = zlib.decompress(stream_content)
         except:
             pass
 
-        analysis = triage(stream_content, scanner_instance)
+        analysis = triage(stream_content, scanner)
         analysis['Section_Name'] = f"Carved_Stream_{idx}"
         analysis['Hex_Obfuscation'] = hex_obfuscation
         carved_results.append(analysis)
@@ -50,10 +47,11 @@ def find_javascript_triggers(reader):
 
 
 def analyze_pdf(file_path):
-
     try:
         reader = PdfReader(file_path)
         triggers = find_javascript_triggers(reader)
+
+        scanner = get_scanner()
 
         streams_data = []
         for obj_ref in reader.objects:
@@ -61,7 +59,7 @@ def analyze_pdf(file_path):
                 obj = reader.get_object(obj_ref)
                 if hasattr(obj, "get_data"):
                     raw_bytes = obj.get_data()
-                    analysis = triage(raw_bytes, scanner_instance)
+                    analysis = triage(raw_bytes, scanner)
                     analysis['Section_Name'] = f"Object_{obj_ref}"
                     streams_data.append(analysis)
             except:

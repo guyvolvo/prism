@@ -4,15 +4,19 @@ import math
 import re
 from collections import Counter
 
+# Set base directory relative to this file
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class PrismScanner:
+    """Handles YARA rule compilation and binary scanning."""
+
     def __init__(self):
         self.rule_folders = [
             os.path.join(BASE_DIR, "malware"),
             os.path.join(BASE_DIR, "maldocs")
         ]
+        # This print will only trigger when rules are actually being loaded
         print(f"[*] Initializing Scanner. Searching in: {', '.join(self.rule_folders)}")
         self.rules = self._compile_all_rules()
 
@@ -32,7 +36,7 @@ class PrismScanner:
             try:
                 yara.compile(filepath=path)
                 namespace = os.path.basename(os.path.dirname(path))
-                if namespace == 'rules' or namespace == 'prism': namespace = 'general'
+                if namespace in ['rules', 'prism']: namespace = 'general'
                 valid_rules[f"{namespace}_{name}"] = path
             except yara.SyntaxError:
                 print(f"\033[1;33m[!] Skipping Broken Rule:\033[0m {name}")
@@ -59,12 +63,18 @@ class PrismScanner:
             return []
 
 
-scanner_instance = PrismScanner()
+_scanner_instance = None
+
+
+def get_scanner():
+    global _scanner_instance
+    if _scanner_instance is None:
+        _scanner_instance = PrismScanner()
+    return _scanner_instance
 
 
 def shannon_entropy(data: bytes) -> float:
-    if not data:
-        return 0.0
+    if not data: return 0.0
     length = len(data)
     counts = Counter(data)
     entropy = 0.0
@@ -78,7 +88,6 @@ def get_content_heuristics(data: bytes):
     h_list = []
     content = data.decode('utf-8', errors='ignore')
 
-    # Advanced Patterns for Shell Scripts & Malware
     patterns = {
         "powershell": "PowerShell Execution",
         "eval(": "Dynamic Code Execution",
@@ -106,7 +115,7 @@ def get_content_heuristics(data: bytes):
 
 def triage(data: bytes, scanner=None, heuristics=None):
     if scanner is None:
-        scanner = scanner_instance
+        scanner = get_scanner()
     if heuristics is None:
         heuristics = []
 
@@ -116,10 +125,7 @@ def triage(data: bytes, scanner=None, heuristics=None):
     yara_matches = scanner.scan_bytes(data)
 
     score = 0
-
-    if yara_matches:
-        score += 10
-
+    if yara_matches: score += 10
     if entropy_score > 7.8:
         score += 5
     elif entropy_score > 7.2:

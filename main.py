@@ -2,10 +2,12 @@ import os
 import sys
 import argparse
 import json
+import hashlib
+import mimetypes
 from datetime import datetime
 
 from colors import PrismColors as PC
-from core.scanner import scanner_instance, triage
+from core.scanner import get_scanner, triage
 from core.report import generate_report
 
 from parsers.pdf_parser import analyze_pdf
@@ -25,6 +27,30 @@ def triage_router(file_path):
         return {"Stream_Results": [], "Triggers": [], "Status": "Unknown/Raw"}
 
 
+def print_metadata_only(file_path):
+    stats = os.stat(file_path)
+
+    with open(file_path, "rb") as f:
+        data = f.read()
+        md5 = hashlib.md5(data).hexdigest()
+        sha256 = hashlib.sha256(data).hexdigest()
+
+    print(f"{PC.HEADER}--- PRISM METADATA: {os.path.basename(file_path)} ---{PC.RESET}")
+    print(f"{PC.INFO}File Info:{PC.RESET}")
+    print(f"  Path:      {file_path}")
+    print(f"  Size:      {stats.st_size} bytes")
+    print(f"  MIME Type: {mimetypes.guess_type(file_path)[0] or 'application/octet-stream'}")
+
+    print(f"\n{PC.INFO}Timestamps:{PC.RESET}")
+    print(f"  Created:   {datetime.fromtimestamp(stats.st_ctime)}")
+    print(f"  Modified:  {datetime.fromtimestamp(stats.st_mtime)}")
+
+    print(f"\n{PC.INFO}Fingerprints:{PC.RESET}")
+    print(f"  MD5:       {PC.WARNING}{md5}{PC.RESET}")
+    print(f"  SHA256:    {PC.WARNING}{sha256}{PC.RESET}")
+    print("-" * 55 + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=f"{PC.HEADER}Prism Triage Framework | Multi-format Malware Analysis{PC.RESET}",
@@ -36,9 +62,10 @@ def main():
     parser.add_argument("-j", "--json", action="store_true", help="Output raw JSON data")
     parser.add_argument("-v", "--verbose", action="store_true", help="Detailed output")
     parser.add_argument("-o", "--log", help="Save results to a JSON file")
+    parser.add_argument("-m", "--metadata", action="store_true", help="Only show file metadata (skips security scan)")
+    parser.add_argument("-s", "--scan", action="store_true", help="Force scan even if metadata flag is used")
 
     args = parser.parse_args()
-    scanner = scanner_instance
 
     files_to_process = []
     if os.path.isdir(args.target):
@@ -49,12 +76,17 @@ def main():
     elif os.path.isfile(args.target):
         files_to_process.append(args.target)
 
-    print(f"{PC.INFO}[*] Prism engine ready. Triage started on {len(files_to_process)} target(s)...\n")
-
-    all_results = []
+    mode_text = "Metadata Mode" if (args.metadata and not args.scan) else "Full Triage"
+    print(f"{PC.INFO}[*] Prism engine ready. Mode: {mode_text} | Targets: {len(files_to_process)}\n")
 
     for file_path in files_to_process:
         try:
+            if args.metadata:
+                print_metadata_only(file_path)
+                if not args.scan:
+                    continue
+
+            scanner = get_scanner()
 
             parser_data = triage_router(file_path)
             heuristics = parser_data.get("Triggers", [])
@@ -82,8 +114,6 @@ def main():
                 "structure": parser_data,
                 "analysis": triage_data
             }
-            if triage_data["YARA_Matches"]:
-                triage_data["Trigger_Count"] = len(triage_data["YARA_Matches"]) + len(triage_data.get("Heuristics", []))
 
             if args.json:
                 print(json.dumps(final_report, indent=4))
@@ -95,11 +125,6 @@ def main():
         except Exception as e:
             print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}")
             continue
-
-    if args.log:
-        with open(args.log, "w") as f:
-            json.dump(all_results, f, indent=4)
-        print(f"\n{PC.SUCCESS}[+] Scan complete. Log saved to {args.log}")
 
 
 if __name__ == '__main__':
