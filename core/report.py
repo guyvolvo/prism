@@ -16,7 +16,6 @@ def generate_report(data):
     print(f"TARGET: {PC.HEADER}{file_name}{PC.RESET}")
     print("=" * 70)
 
-    # Calculate triggers
     all_struct_alerts = struct.get('Triggers', [])
     trigger_count = len(yara_matches) + len(heuristics) + len(all_struct_alerts) + (1 if entropy > 7.5 else 0)
 
@@ -46,18 +45,31 @@ def generate_report(data):
         print("    -> Analysis complete (No structural anomalies).")
 
     has_high_entropy_stream = False
+
     if 'Stream_Results' in struct and struct['Stream_Results']:
-        print(f"\n    {PC.INFO}Internal Streams/Sections:{PC.RESET}")
-        print(f"      {'Name':<15} | {'Entropy':<8} | {'Status'}")
-        print(f"      {'-' * 40}")
+        print(f"\n    {PC.INFO}Internal Streams/Sections Analysis:{PC.RESET}")
+        print(f"    {'-' * 45}")
+
         for item in struct['Stream_Results']:
             name = item.get('Section_Name', item.get('Name', 'unknown'))
             ent = item.get('Entropy', 0.0)
-            if ent > 7.2:
+
+            if ent > 7.5:
                 has_high_entropy_stream = True
-            status = "Suspicious" if ent > 7.2 else "Normal"
-            color = PC.WARNING if ent > 7.2 else PC.RESET
-            print(f"      {color}{name:<15} | {ent:<8} | {status}{PC.RESET}")
+                status = "CRITICAL / ENCRYPTED"
+                color = PC.CRITICAL
+            elif ent > 7.2:
+                has_high_entropy_stream = True
+                status = "SUSPICIOUS / PACKED"
+                color = PC.WARNING
+            else:
+                status = "NORMAL"
+                color = PC.SUCCESS
+
+            print(f"    {PC.HEADER}>> Section:{PC.RESET}  {name}")
+            print(f"       {PC.INFO}Entropy:{PC.RESET}  {ent}")
+            print(f"       {PC.INFO}Status:{PC.RESET}   {color}{status}{PC.RESET}")
+            print(f"    {'-' * 30}")
 
     verdict = analysis.get('Status', 'CLEAN')
 
