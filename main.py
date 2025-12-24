@@ -1,6 +1,7 @@
 import os
 import sys
-
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vendor_path = os.path.join(current_dir, 'vendor')
 
