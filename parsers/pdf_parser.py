@@ -21,7 +21,7 @@ def brute_force_carve(file_path):
         except:
             pass
 
-        analysis = triage(stream_content, scanner)
+        analysis = triage(file_path=file_path, data=stream_content, scanner=scanner)
         analysis['Section_Name'] = f"Carved_Stream_{idx}"
         analysis['Hex_Obfuscation'] = hex_obfuscation
         carved_results.append(analysis)

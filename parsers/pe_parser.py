@@ -2,12 +2,10 @@ import pefile
 import os
 from core.scanner import shannon_entropy
 
-
 def analyze_pe(file_path):
     try:
         pe = pefile.PE(file_path)
     except (pefile.PEFormatError, Exception):
-
         try:
             with open(file_path, "rb") as f:
                 raw_data = f.read()
@@ -15,6 +13,7 @@ def analyze_pe(file_path):
             entropy_val = shannon_entropy(raw_data)
             return {
                 "File": file_path,
+                "Status": "CRITICAL" if entropy_val > 7.2 else "SUSPICIOUS",  # Added Status
                 "Triggers": ["MALFORMED PE HEADER: Analyzed as raw binary"],
                 "Stream_Results": [{
                     "Section_Name": "HEADER_CORRUPT_OR_RAW",
@@ -24,12 +23,13 @@ def analyze_pe(file_path):
                 }]
             }
         except Exception as e:
-            return {"error": f"Critical IO Error: {e}"}
+            return {"Status": "ERROR", "error": f"Critical IO Error: {e}"}
 
     final_report = {
         "File": file_path,
         "Triggers": [],
-        "Stream_Results": []
+        "Stream_Results": [],
+        "Status": "CLEAN"
     }
 
     overlay_offset = pe.get_overlay_data_start_offset()
@@ -73,3 +73,10 @@ def analyze_pe(file_path):
             final_report["Triggers"].append(f"Packed/Encrypted Code Section: {section_name}")
 
         final_report["Stream_Results"].append(result)
+
+    if any("Packed" in t or "Suspicious API" in t for t in final_report["Triggers"]):
+        final_report["Status"] = "CRITICAL"
+    elif final_report["Triggers"]:
+        final_report["Status"] = "SUSPICIOUS"
+
+    return final_report

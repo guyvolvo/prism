@@ -179,15 +179,13 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
         with stats_lock:
             results_log.append(report)
+            final_status = str(triage_data.get("Status", "CLEAN")).upper()
 
-            r_status = str(parser_data.get("Status", "Unknown")).upper()
-            a_status = str(triage_data.get("Status", "CLEAN")).upper()
-
-            if "CRITICAL" in r_status or "MALICIOUS" in a_status or "CRITICAL" in a_status:
+            if "CRITICAL" in final_status or "MALICIOUS" in final_status:
                 stats["CRITICAL"] += 1
-            elif "SUSPICIOUS" in r_status or "SUSPICIOUS" in a_status:
+            elif "SUSPICIOUS" in final_status:
                 stats["SUSPICIOUS"] += 1
-            elif "TRUSTED" in r_status or "TRUSTED" in a_status:
+            elif "TRUSTED" in final_status:
                 stats["TRUSTED"] += 1
             else:
                 stats["CLEAN"] += 1
