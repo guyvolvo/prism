@@ -130,6 +130,9 @@ def main():
     try:
         for file_path in files_to_process:
             try:
+                if not os.path.exists(file_path):
+                    continue
+
                 current_size = os.path.getsize(file_path)
                 if current_size > MAX_FILE_SIZE and not args.large:
                     print(f"{PC.WARNING}[!] Skipping {os.path.basename(file_path)}: File exceeds 100MB.{PC.RESET}")
