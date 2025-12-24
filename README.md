@@ -30,6 +30,9 @@ cd prism
 python3 main.py -h
 python3 main.py malware.exe
 ```
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/567975c0-d184-4e01-b5d0-f8434a1eadbc">
+</p>
 
 ## ✨ Key Features
 
