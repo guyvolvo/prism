@@ -69,20 +69,30 @@ def triage_router(file_path):
     except Exception:
         header = b""
 
+    def format_binary_alert(os_type, stream_msg):
+        return {
+            "Status": "SUSPICIOUS",
+            "Triggers": ["Hidden Executable"],
+            "Stream_Results": [
+                {
+                    "Section_Name": stream_msg,
+                    "Entropy": 0.0
+                }
+            ],
+            "Heuristic Alerts": [f"CRITICAL: Hidden {os_type} binary detected via magic bytes"]
+        }
+
     if header.startswith(b"%PDF"):
         return analyze_pdf(file_path)
-
     elif header.startswith(b"PK\x03\x04"):
         return analyze_office(file_path)
-
     elif header.startswith(b"MZ"):
         return analyze_pe(file_path)
     elif header.startswith(b"\x7fELF"):
-        return {"Stream_Results": ["Linux ELF Binary Detected"], "Triggers": ["Hidden Executable"],
-                "Status": "SUSPICIOUS"}
+        return format_binary_alert("Linux", "Linux ELF Binary")
     elif header in [b"\xca\xfe\xba\xbe", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xce"]:
-        return {"Stream_Results": ["macOS Mach-O Binary Detected"], "Triggers": ["Hidden Executable"],
-                "Status": "SUSPICIOUS"}
+        return format_binary_alert("macOS", "macOS Mach-O Binary")
+
     ext = os.path.splitext(file_path)[1].lower()
     if ext == ".pdf":
         return analyze_pdf(file_path)
