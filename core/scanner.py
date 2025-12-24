@@ -12,11 +12,10 @@ from urllib3.util import Retry
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-API_KEY = os.getenv("BAZAAR_API_KEY")
+DEFAULT_API_KEY = os.getenv("BAZAAR_API_KEY")
 
 
 class PrismScanner:
-
     def __init__(self):
         self.rule_folders = [
             os.path.join(BASE_DIR, "malware"),
@@ -62,11 +61,10 @@ class PrismScanner:
         if not self.rules:
             return []
         try:
-
             matches = self.rules.match(data=data, fast=True, timeout=15)
             return [f"{m.namespace}:{m.rule}" for m in matches]
         except yara.TimeoutError:
-            print("[!] YARA Scan timed out - sample may be highly complex.")
+            print("[!] YARA Scan timed out.")
             return ["error:scan_timeout"]
         except Exception as e:
             return [f"error:{str(e)}"]
@@ -88,18 +86,20 @@ def get_secure_session():
 _session = get_secure_session()
 
 
-def check_malware_bazaar(file_hash: str):
+def check_malware_bazaar(file_hash: str, key: str = None):
     """
     Queries MalwareBazaar for hash reputation
     """
-    if not API_KEY:
-        print("[!] Warning: BAZAAR_API_KEY not found in environment.")
+    active_key = key or DEFAULT_API_KEY
+
+    if not active_key:
         return None
 
-    url = "https://mb-api.abuse.ch/api/v1/"
+    active_key = active_key.strip("'").strip('"')
 
+    url = "https://mb-api.abuse.ch/api/v1/"
     headers = {
-        "Auth-Key": API_KEY,
+        "Auth-Key": active_key,
         "User-Agent": "Prism-Malware-Scanner/1.0"
     }
 
@@ -110,19 +110,10 @@ def check_malware_bazaar(file_hash: str):
 
     try:
         response = _session.post(url, data=query_data, headers=headers, timeout=5)
-
         if response.status_code == 200:
             res_json = response.json()
-            query_status = res_json.get('query_status')
-
-            if query_status != 'ok':
-                print(f"[*] MalwareBazaar Query Status: {query_status}")
-
-            if query_status == 'ok':
+            if res_json.get('query_status') == 'ok':
                 return res_json['data'][0]
-        else:
-            print(f"[!] MalwareBazaar HTTP Error: {response.status_code}")
-
     except Exception as e:
         print(f"[!] MalwareBazaar Connection Error: {e}")
 
@@ -143,30 +134,21 @@ def shannon_entropy(data: bytes) -> float:
 def get_content_heuristics(data: bytes):
     h_list = []
     content = data.decode('utf-8', errors='ignore')
-
     patterns = {
         "powershell": "PowerShell Execution",
         "eval(": "Dynamic Code Execution",
         "base64": "Encoded Payload",
         "http": "Network/URL String",
-        "eicar": "EICAR Test String",
         "cmd.exe": "Shell Spawn",
-        "curl": "Downloader (curl)",
-        "wget": "Downloader (wget)",
-        "chmod +x": "Permission Escalation (chmod)",
-        "| sh": "Pipe to Shell",
-        "| bash": "Pipe to Shell",
         "/dev/tcp/": "Potential Reverse Shell"
     }
-
     if re.search(r'https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', content):
         h_list.append("Critical: Raw IP Downloader Found")
-
     for key, label in patterns.items():
         if key in content.lower():
             h_list.append(f"Content Match: {label}")
-
     return h_list
+
 
 _scanner_instance = None
 
@@ -178,7 +160,7 @@ def get_scanner():
     return _scanner_instance
 
 
-def triage(data: bytes, scanner=None, heuristics=None, file_hash=None):
+def triage(data: bytes, scanner=None, heuristics=None, file_hash=None, api_key=None):
     if scanner is None:
         scanner = get_scanner()
     if heuristics is None:
@@ -193,27 +175,15 @@ def triage(data: bytes, scanner=None, heuristics=None, file_hash=None):
     reputation_info = None
 
     if file_hash:
-        reputation_info = check_malware_bazaar(file_hash)
+        reputation_info = check_malware_bazaar(file_hash, key=api_key)
         if reputation_info:
             score += 25
-            heuristics.append(f"REPUTATION: Known Malware Found ({reputation_info.get('signature', 'Unknown')})")
+            sig = reputation_info.get('signature') or 'Unknown'
+            heuristics.append(f"REPUTATION: Known Malware Found ({sig})")
         time.sleep(0.5)
 
     if yara_matches: score += 10
-    if entropy_score > 7.8:
-        score += 5
-    elif entropy_score > 7.2:
-        score += 2
-
-    for h in found_heuristics:
-        if "Critical" in h:
-            score += 6
-        elif "Pipe to Shell" in h:
-            score += 4
-        elif "Downloader" in h:
-            score += 3
-        else:
-            score += 2
+    if entropy_score > 7.2: score += 2
 
     status = "CLEAN"
     if score >= 10:
@@ -227,6 +197,5 @@ def triage(data: bytes, scanner=None, heuristics=None, file_hash=None):
         "Score": score,
         "Heuristics": heuristics,
         "Reputation": reputation_info,
-        "Requires_Deep_RE": score >= 5,
         "Status": status
     }
