@@ -15,6 +15,7 @@ if os.path.exists(vendor_path) and vendor_path not in sys.path:
 
 try:
     from dotenv import load_dotenv, find_dotenv, set_key
+
     load_dotenv(find_dotenv())
 except ImportError:
     pass
@@ -30,6 +31,7 @@ MAX_FILE_SIZE = 100 * 1024 * 1024
 
 stats_lock = threading.Lock()
 print_lock = threading.Lock()
+
 
 def resolve_api_key(args_api):
     env_path = find_dotenv() or os.path.join(current_dir, '.env')
@@ -102,9 +104,20 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
         sha256 = hashlib.sha256(raw_bytes).hexdigest()
         md5 = hashlib.md5(raw_bytes).hexdigest()
 
+        report = {
+            "scan_info": {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "mime_type": mime_type},
+            "file_info": {"name": os.path.basename(file_path), "sha256": sha256, "size_bytes": file_size},
+            "analysis": {},
+            "structure": {}
+        }
+
         if args.metadata:
             print_metadata_only(file_path, sha256, md5, mime_type)
-            if not args.scan: return
+            if not args.scan:
+                with stats_lock:
+                    results_log.append(report)
+                    stats["total"] += 1
+                return
 
         scanner = get_scanner()
         parser_data = triage_router(file_path) or {"Status": "Error"}
@@ -113,12 +126,8 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
         if not triage_data:
             triage_data = {"Status": "CLEAN", "Score": 0}
 
-        report = {
-            "scan_info": {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "mime_type": mime_type},
-            "file_info": {"name": os.path.basename(file_path), "sha256": sha256, "size_bytes": file_size},
-            "analysis": triage_data,
-            "structure": parser_data
-        }
+        report["analysis"] = triage_data
+        report["structure"] = parser_data
 
         with stats_lock:
             results_log.append(report)
@@ -128,7 +137,7 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
         with print_lock:
             if args.json:
-                print(json.dumps(report, indent=4))
+                print(json.dumps(report, indent=4, default=str))
             else:
                 generate_report(report)
 
@@ -162,7 +171,7 @@ def main():
     files_to_process = []
     if os.path.isdir(args.target):
         for root, _, files in (
-        os.walk(args.target) if args.recursive else [(args.target, [], os.listdir(args.target))]):
+                os.walk(args.target) if args.recursive else [(args.target, [], os.listdir(args.target))]):
             for f in files:
                 full_p = os.path.join(root, f)
                 if os.path.isfile(full_p): files_to_process.append(full_p)
@@ -192,11 +201,14 @@ def main():
     if stats["total"] > 0 or stats["SKIPPED"] > 0:
         print(f"\n{PC.HEADER}{'=' * 30} SESSION SUMMARY {'=' * 30}{PC.RESET}")
         print(f"Scan Duration:       {duration.total_seconds():.2f} seconds")
-        print(f"Files Analyzed:      {stats['total']}")
+        print(f"Files Processed:     {stats['total']}")
         print(f"{PC.CRITICAL}Malicious:           {stats.get('CRITICAL', 0)}{PC.RESET}")
         print(f"{PC.WARNING}Suspicious:          {stats.get('SUSPICIOUS', 0)}{PC.RESET}")
         print(f"{PC.SUCCESS}Clean:               {stats.get('CLEAN', 0)}{PC.RESET}")
-        if stats["SKIPPED"] > 0: print(f"{PC.WARNING}Skipped (>100MB):    {stats['SKIPPED']}{PC.RESET}")
+        if stats.get('TRUSTED', 0) > 0:
+            print(f"{PC.SUCCESS}Whitelisted/Trusted: {stats['TRUSTED']}{PC.RESET}")
+        if stats["SKIPPED"] > 0:
+            print(f"{PC.WARNING}Skipped (>100MB):    {stats['SKIPPED']}{PC.RESET}")
         print(f"{PC.HEADER}{'=' * 77}{PC.RESET}")
 
     if args.log:
