@@ -72,7 +72,7 @@ def triage_router(file_path):
     def format_binary_alert(os_type, stream_msg):
         return {
             "Status": "CRITICAL",
-            "Triggers": ["Hidden Executable", "Malformed Structure"],
+            "Triggers": ["Hidden Executable", "Malformed"],
             "Stream_Results": [
                 {
                     "Section_Name": stream_msg,
@@ -174,7 +174,7 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             triage_data = {"Status": "CLEAN", "Score": 0}
 
         router_status = parser_data.get("Status", "Unknown")
-        if triage_data.get("Status") == "CLEAN" and router_status in ["SUSPICIOUS", "CRITICAL"]:
+        if router_status in ["SUSPICIOUS", "CRITICAL"]:
             triage_data["Status"] = router_status
             if "Triggers" in parser_data:
                 triage_data.setdefault("Triggers", []).extend(parser_data["Triggers"])
@@ -189,7 +189,7 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             if status in stats:
                 stats[status] += 1
             else:
-                stats["SUSPICIOUS"] += 1
+                stats["CRITICAL"] = stats.get("CRITICAL", 0) + 1
             stats["total"] += 1
 
         with print_lock:
