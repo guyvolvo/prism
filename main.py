@@ -35,7 +35,6 @@ def resolve_api_key(args_api):
 
     if isinstance(args_api, str):
         clean_key = args_api.strip("'").strip('"')
-
         print(f"{PC.INFO}[+] API Key provided via command line.")
         print(f"[*] Saving/Updating API Key in {env_path} ...{PC.RESET}")
         try:
@@ -49,7 +48,6 @@ def resolve_api_key(args_api):
     raw_key = os.getenv("BAZAAR_API_KEY")
     if raw_key:
         return raw_key.strip("'").strip('"')
-
     return None
 
 def triage_router(file_path):
@@ -93,8 +91,32 @@ def main():
 
     api_key = resolve_api_key(args.api)
 
+    if args.api is not None and not args.target:
+        if api_key:
+            if isinstance(args.api, str):
+                print(f"{PC.SUCCESS}[+] API Configuration updated and saved.{PC.RESET}")
+            else:
+                print(f"{PC.INFO}[*] Current stored API Key: {api_key}{PC.RESET}")
+        else:
+            print(f"{PC.WARNING}[!] No API Key found. Run with --api <key> to save one.{PC.RESET}")
+        return
+
+    if not args.target:
+        print(f"{PC.CRITICAL}[!] Error: No target provided.{PC.RESET}")
+        parser.print_help()
+        sys.exit(1)
 
     files_to_process = []
+    if os.path.isdir(args.target):
+        for root, _, files in os.walk(args.target):
+            for f in files:
+                files_to_process.append(os.path.join(root, f))
+            if not args.recursive: break
+    elif os.path.isfile(args.target):
+        files_to_process.append(args.target)
+    else:
+        print(f"{PC.CRITICAL}[!] Error: Target '{args.target}' not found.{PC.RESET}")
+        sys.exit(1)
 
     results_log = []
     stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0}
@@ -110,9 +132,10 @@ def main():
             file_sha256 = hashlib.sha256(raw_bytes).hexdigest()
             file_md5 = hashlib.md5(raw_bytes).hexdigest()
 
-            if args.metadata and not args.scan:
+            if args.metadata:
                 print_metadata_only(file_path, file_sha256, file_md5)
-                continue
+                if not args.scan:
+                    continue
 
             scanner = get_scanner()
             parser_data = triage_router(file_path)
