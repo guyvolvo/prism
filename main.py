@@ -26,7 +26,7 @@ from core.scanner import get_scanner, triage
 from core.report import generate_report
 
 from parsers.pdf_parser import analyze_pdf
-from parsers.office_parser import analyze_ole
+from parsers.office_parser import analyze_office
 from parsers.pe_parser import analyze_pe
 
 
@@ -53,7 +53,7 @@ def triage_router(file_path):
     if ext == ".pdf":
         return analyze_pdf(file_path)
     elif ext in [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".docm", ".xlsm"]:
-        return analyze_ole(file_path)
+        return analyze_office(file_path)
     elif ext in [".exe", ".dll", ".bin", ".sys", ".com"]:
         return analyze_pe(file_path)
     else:
