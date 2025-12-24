@@ -1,10 +1,26 @@
 import os
 import sys
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+vendor_path = os.path.join(current_dir, 'vendor')
+
+if os.path.exists(vendor_path) and vendor_path not in sys.path:
+    sys.path.insert(0, vendor_path)
+
+
 import argparse
 import json
 import hashlib
 import mimetypes
 from datetime import datetime
+
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+
+    pass
 
 from colors import PrismColors as PC
 from core.scanner import get_scanner, triage
@@ -13,7 +29,6 @@ from core.report import generate_report
 from parsers.pdf_parser import analyze_pdf
 from parsers.office_parser import analyze_ole
 from parsers.pe_parser import analyze_pe
-
 
 def triage_router(file_path):
     ext = os.path.splitext(file_path)[1].lower()
