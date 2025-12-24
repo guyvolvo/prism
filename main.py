@@ -231,7 +231,7 @@ def main():
                 os.walk(args.target) if args.recursive else [(args.target, [], os.listdir(args.target))]):
             for f in files:
                 full_p = os.path.join(root, f)
-                if os.path.isfile(full_p): files_to_process.append(full_p)
+                if os.path.isfile(full_p): files_to_process.append(os.path.abspath(full_p))
     elif os.path.isfile(args.target):
         files_to_process.append(args.target)
 
