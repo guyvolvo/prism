@@ -34,6 +34,27 @@ python3 main.py malware.exe
   <img src="https://github.com/user-attachments/assets/567975c0-d184-4e01-b5d0-f8434a1eadbc">
 </p>
 
+
+## 🔑 API Configuration
+Prism integrates with **MalwareBazaar** to perform real-time hash lookups. This allows the tool to tell you if a file has already been identified by the global research community.
+
+1. **Obtain an API Key:**
+    * Go to [MalwareBazaar (abuse.ch)](https://bazaar.abuse.ch/api/).
+    * Log in or create a free account.
+    * Copy your API Key from your account profile.
+
+2. **Setting the Key in Prism**
+    * Run the following command to save your key:
+   ```bash
+    prism --api API_KEY
+   ```
+   * To check if your API key is correctly loaded use:
+    ```bash
+    prism --api 
+    ```
+      
+**Prism automatically generates a local .env file in the project root to securely store and use your MalwareBazaar API key for future scanning sessions.**
+
 ## ✨ Key Features
 
 * **🛡️ Safe Static Analysis:** Zero-execution environment. All inspections are strictly read-only, ensuring malware cannot detonate during the triage phase.
