@@ -122,7 +122,7 @@ def main():
         sys.exit(1)
 
     results_log = []
-    stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0, "SKIPPED": 0}
+    stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0, "SKIPPED": 0, "TRUSTED": 0}
 
     mode_text = "Metadata Mode" if (args.metadata and not args.scan) else "Full Triage"
     print(f"{PC.INFO}[*] Prism engine ready. Mode: {mode_text} | Targets: {len(files_to_process)}\n")
@@ -149,7 +149,6 @@ def main():
 
                 scanner = get_scanner()
                 parser_data = triage_router(file_path)
-                heuristics = parser_data.get("Triggers", [])
 
                 triage_data = triage(
                     file_path=file_path,
@@ -184,6 +183,8 @@ def main():
                 else:
                     generate_report(final_report)
 
+            except KeyboardInterrupt:
+                raise
             except Exception as e:
                 print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}")
                 continue
@@ -195,9 +196,10 @@ def main():
         print(f"\n{PC.HEADER}{'='*30} SESSION SUMMARY {'='*30}{PC.RESET}")
         print(f"Total Files Found:   {len(files_to_process)}")
         print(f"Files Analyzed:      {stats['total']}")
-        print(f"{PC.CRITICAL}Malicious/Critical:  {stats['CRITICAL']}{PC.RESET}")
-        print(f"{PC.WARNING}Suspicious:          {stats['SUSPICIOUS']}{PC.RESET}")
-        print(f"{PC.SUCCESS}Clean:               {stats['CLEAN']}{PC.RESET}")
+        print(f"{PC.SUCCESS}Whitelisted/Safe:    {stats.get('TRUSTED', 0)}{PC.RESET}")
+        print(f"{PC.CRITICAL}Malicious/Critical:  {stats.get('CRITICAL', 0)}{PC.RESET}")
+        print(f"{PC.WARNING}Suspicious:          {stats.get('SUSPICIOUS', 0)}{PC.RESET}")
+        print(f"{PC.SUCCESS}Clean/Heuristic:     {stats.get('CLEAN', 0)}{PC.RESET}")
         if stats["SKIPPED"] > 0:
             print(f"{PC.WARNING}Skipped (Too Large): {stats['SKIPPED']}{PC.RESET}")
         print(f"{PC.HEADER}{'='*77}{PC.RESET}")
