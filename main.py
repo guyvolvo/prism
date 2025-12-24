@@ -71,12 +71,12 @@ def triage_router(file_path):
 
     def format_binary_alert(os_type, stream_msg):
         return {
-            "Status": "SUSPICIOUS",
-            "Triggers": ["Hidden Executable"],
+            "Status": "CRITICAL",
+            "Triggers": ["Hidden Executable", "Malformed Structure"],
             "Stream_Results": [
                 {
                     "Section_Name": stream_msg,
-                    "Entropy": 0.0
+                    "Entropy": 7.9
                 }
             ],
             "Heuristic Alerts": [f"CRITICAL: Hidden {os_type} binary detected via magic bytes"]
@@ -153,13 +153,15 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             "structure": {}
         }
 
+        if args.metadata and not args.scan:
+            print_metadata_only(file_path, sha256, md5, mime_type)
+            with stats_lock:
+                results_log.append(report)
+                stats["total"] += 1
+            return
+
         if args.metadata:
             print_metadata_only(file_path, sha256, md5, mime_type)
-            if not args.scan:
-                with stats_lock:
-                    results_log.append(report)
-                    stats["total"] += 1
-                return
 
         scanner = get_scanner()
         parser_data = triage_router(file_path)
@@ -171,8 +173,9 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
         if not isinstance(triage_data, dict):
             triage_data = {"Status": "CLEAN", "Score": 0}
 
-        if triage_data.get("Status") == "CLEAN" and parser_data.get("Status") == "SUSPICIOUS":
-            triage_data["Status"] = "SUSPICIOUS"
+        router_status = parser_data.get("Status", "Unknown")
+        if triage_data.get("Status") == "CLEAN" and router_status in ["SUSPICIOUS", "CRITICAL"]:
+            triage_data["Status"] = router_status
             if "Triggers" in parser_data:
                 triage_data.setdefault("Triggers", []).extend(parser_data["Triggers"])
 
@@ -182,7 +185,11 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
         with stats_lock:
             results_log.append(report)
             status = triage_data.get("Status", "CLEAN")
-            stats[status] = stats.get(status, 0) + 1
+
+            if status in stats:
+                stats[status] += 1
+            else:
+                stats["SUSPICIOUS"] += 1
             stats["total"] += 1
 
         with print_lock:
