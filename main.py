@@ -27,13 +27,8 @@ def triage_router(file_path):
         return {"Stream_Results": [], "Triggers": [], "Status": "Unknown/Raw"}
 
 
-def print_metadata_only(file_path):
+def print_metadata_only(file_path, sha256_hash, md5_hash):
     stats = os.stat(file_path)
-
-    with open(file_path, "rb") as f:
-        data = f.read()
-        md5 = hashlib.md5(data).hexdigest()
-        sha256 = hashlib.sha256(data).hexdigest()
 
     print(f"{PC.HEADER}--- PRISM METADATA: {os.path.basename(file_path)} ---{PC.RESET}")
     print(f"{PC.INFO}File Info:{PC.RESET}")
@@ -46,8 +41,8 @@ def print_metadata_only(file_path):
     print(f"  Modified:  {datetime.fromtimestamp(stats.st_mtime)}")
 
     print(f"\n{PC.INFO}Fingerprints:{PC.RESET}")
-    print(f"  MD5:       {PC.WARNING}{md5}{PC.RESET}")
-    print(f"  SHA256:    {PC.WARNING}{sha256}{PC.RESET}")
+    print(f"  MD5:       {PC.WARNING}{md5_hash}{PC.RESET}")
+    print(f"  SHA256:    {PC.WARNING}{sha256_hash}{PC.RESET}")
     print("-" * 55 + "\n")
 
 
@@ -81,20 +76,22 @@ def main():
 
     for file_path in files_to_process:
         try:
+            with open(file_path, "rb") as f:
+                raw_bytes = f.read()
+
+            file_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+            file_md5 = hashlib.md5(raw_bytes).hexdigest()
+
             if args.metadata:
-                print_metadata_only(file_path)
+                print_metadata_only(file_path, file_sha256, file_md5)
                 if not args.scan:
                     continue
 
             scanner = get_scanner()
-
             parser_data = triage_router(file_path)
             heuristics = parser_data.get("Triggers", [])
 
-            with open(file_path, "rb") as f:
-                raw_bytes = f.read()
-
-            triage_data = triage(raw_bytes, scanner, heuristics=heuristics)
+            triage_data = triage(raw_bytes, scanner, heuristics=heuristics, file_hash=file_sha256)
 
             all_triggers = []
             all_triggers.extend(triage_data.get("YARA_Matches", []))
@@ -109,7 +106,8 @@ def main():
                 "file_info": {
                     "name": os.path.basename(file_path),
                     "path": file_path,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "sha256": file_sha256
                 },
                 "structure": parser_data,
                 "analysis": triage_data

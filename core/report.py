@@ -10,6 +10,7 @@ def generate_report(data):
     entropy = analysis.get('Entropy', 0)
     yara_matches = analysis.get('YARA_Matches', [])
     heuristics = analysis.get('Heuristics', [])
+    reputation = analysis.get('Reputation')
 
     print("=" * 70)
     print(f"PRISM TRIAGE REPORT | {info.get('timestamp', 'N/A')}")
@@ -27,16 +28,25 @@ def generate_report(data):
 
     if heuristics:
         for h in heuristics:
-            print(f"    -> {PC.WARNING}HEURISTIC: {h}{PC.RESET}")
+            h_color = PC.CRITICAL if "REPUTATION" in h else PC.WARNING
+            print(f"    -> {h_color}HEURISTIC: {h}{PC.RESET}")
 
     if entropy > 7.5:
         print(f"    -> {PC.WARNING}High Entropy ({entropy}): Potential Packing/Encryption{PC.RESET}")
 
-    if trigger_count == 0:
+    print(f"\n[+] MALWAREBAZAAR: ")
+    if reputation:
+        print(f"    Status:  {PC.CRITICAL}MATCH FOUND{PC.RESET}")
+        print(f"    Sign:    {PC.WARNING}{reputation.get('signature', 'Unknown Signature')}{PC.RESET}")
+        print(f"    Tags:    {', '.join(reputation.get('tags', []))}")
+        print(f"    Link:    {PC.INFO}https://bazaar.abuse.ch/sample/{reputation.get('sha256_hash')}/{PC.RESET}")
+    else:
+        print(f"    Status:  {PC.SUCCESS}Not Found in Database{PC.RESET}")
+
+    if trigger_count == 0 and not reputation:
         print("    -> No immediate triggers found.")
 
     print(f"\n[!] STRUCTURE ANALYSIS:")
-
     if all_struct_alerts:
         print(f"    {PC.WARNING}Heuristic Alerts:{PC.RESET}")
         for trigger in all_struct_alerts:
@@ -45,7 +55,6 @@ def generate_report(data):
         print("    -> Analysis complete (No structural anomalies).")
 
     has_high_entropy_stream = False
-
     if 'Stream_Results' in struct and struct['Stream_Results']:
         print(f"\n    {PC.INFO}Internal Streams/Sections Analysis:{PC.RESET}")
         print(f"    {'-' * 45}")
@@ -72,10 +81,11 @@ def generate_report(data):
             print(f"    {'-' * 30}")
 
     verdict = analysis.get('Status', 'CLEAN')
-
     is_malformed = any("Corrupt" in str(t) or "Malformed" in str(t) for t in all_struct_alerts)
 
-    if is_malformed or has_high_entropy_stream:
+    if reputation:
+        verdict = "MALICIOUS (Known Reputation)"
+    elif is_malformed or has_high_entropy_stream:
         if verdict == "CLEAN":
             verdict = "SUSPICIOUS (Structural Anomaly)"
 

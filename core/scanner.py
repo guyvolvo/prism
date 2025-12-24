@@ -2,22 +2,27 @@ import os
 import yara
 import math
 import re
+import requests
+import time
 from collections import Counter
+from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
-# Set base directory relative to this file
+load_dotenv()
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+API_KEY = os.getenv("BAZAAR_API_KEY")
 
 
 class PrismScanner:
-    """Handles YARA rule compilation and binary scanning."""
 
     def __init__(self):
         self.rule_folders = [
             os.path.join(BASE_DIR, "malware"),
             os.path.join(BASE_DIR, "maldocs")
         ]
-        # This print will only trigger when rules are actually being loaded
-        print(f"[*] Initializing Scanner. Searching in: {', '.join(self.rule_folders)}")
+        print(f"[*] Initializing Scanner. Rule folders: {', '.join(self.rule_folders)}")
         self.rules = self._compile_all_rules()
 
     def _compile_all_rules(self):
@@ -63,14 +68,42 @@ class PrismScanner:
             return []
 
 
-_scanner_instance = None
+def get_secure_session():
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["POST"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    return session
 
 
-def get_scanner():
-    global _scanner_instance
-    if _scanner_instance is None:
-        _scanner_instance = PrismScanner()
-    return _scanner_instance
+_session = get_secure_session()
+
+
+def check_malware_bazaar(file_hash: str):
+    """
+    Queries MalwareBazaar for hash reputation.
+    """
+    if not API_KEY:
+        return None
+
+    url = "https://mb-api.abuse.ch/api/v1/"
+    headers = {"Auth-Key": API_KEY}
+    query_data = {'query': 'get_info', 'hash': file_hash}
+
+    try:
+        response = _session.post(url, data=query_data, headers=headers, timeout=5)
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get('query_status') == 'ok':
+                return res_json['data'][0]
+    except Exception:
+        pass
+    return None
 
 
 def shannon_entropy(data: bytes) -> float:
@@ -112,8 +145,17 @@ def get_content_heuristics(data: bytes):
 
     return h_list
 
+_scanner_instance = None
 
-def triage(data: bytes, scanner=None, heuristics=None):
+
+def get_scanner():
+    global _scanner_instance
+    if _scanner_instance is None:
+        _scanner_instance = PrismScanner()
+    return _scanner_instance
+
+
+def triage(data: bytes, scanner=None, heuristics=None, file_hash=None):
     if scanner is None:
         scanner = get_scanner()
     if heuristics is None:
@@ -125,6 +167,15 @@ def triage(data: bytes, scanner=None, heuristics=None):
     yara_matches = scanner.scan_bytes(data)
 
     score = 0
+    reputation_info = None
+
+    if file_hash:
+        reputation_info = check_malware_bazaar(file_hash)
+        if reputation_info:
+            score += 25
+            heuristics.append(f"REPUTATION: Known Malware Found ({reputation_info.get('signature', 'Unknown')})")
+        time.sleep(0.5)
+
     if yara_matches: score += 10
     if entropy_score > 7.8:
         score += 5
@@ -142,7 +193,7 @@ def triage(data: bytes, scanner=None, heuristics=None):
             score += 2
 
     status = "CLEAN"
-    if score >= 5:
+    if score >= 10:
         status = "CRITICAL"
     elif score >= 2:
         status = "SUSPICIOUS"
@@ -152,6 +203,7 @@ def triage(data: bytes, scanner=None, heuristics=None):
         "YARA_Matches": yara_matches,
         "Score": score,
         "Heuristics": heuristics,
+        "Reputation": reputation_info,
         "Requires_Deep_RE": score >= 5,
         "Status": status
     }
