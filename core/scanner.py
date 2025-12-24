@@ -141,7 +141,7 @@ def get_scanner():
     return _scanner_instance
 
 
-def triage(file_path, data: bytes, scanner=None, api_key=None):
+def triage(file_path, data: bytes, scanner=None, api_key=None, **kwargs):
     file_hash = get_file_hash(file_path)
 
     is_safe, info = check_circl_whitelist(file_hash)

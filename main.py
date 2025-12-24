@@ -152,10 +152,9 @@ def main():
                 heuristics = parser_data.get("Triggers", [])
 
                 triage_data = triage(
-                    raw_bytes,
-                    scanner,
-                    heuristics=heuristics,
-                    file_hash=file_sha256,
+                    file_path=file_path,
+                    data=raw_bytes,
+                    scanner=scanner,
                     api_key=api_key
                 )
 
