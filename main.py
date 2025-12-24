@@ -17,6 +17,7 @@ MAX_FILE_SIZE = 100 * 1024 * 1024
 
 try:
     from dotenv import load_dotenv, find_dotenv, set_key
+
     load_dotenv(find_dotenv())
 except ImportError:
     pass
@@ -48,6 +49,7 @@ def resolve_api_key(args_api):
     raw_key = os.getenv("BAZAAR_API_KEY")
     return raw_key.strip("'").strip('"') if raw_key else None
 
+
 def triage_router(file_path):
     ext = os.path.splitext(file_path)[1].lower()
     if ext == ".pdf":
@@ -58,6 +60,7 @@ def triage_router(file_path):
         return analyze_pe(file_path)
     else:
         return {"Stream_Results": [], "Triggers": [], "Status": "Unknown/Raw"}
+
 
 def print_metadata_only(file_path, sha256_hash, md5_hash):
     stats = os.stat(file_path)
@@ -70,6 +73,7 @@ def print_metadata_only(file_path, sha256_hash, md5_hash):
     print(f"  MD5:       {PC.WARNING}{md5_hash}{PC.RESET}")
     print(f"  SHA256:    {PC.WARNING}{sha256_hash}{PC.RESET}")
     print("-" * 55 + "\n")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -196,7 +200,7 @@ def main():
         print(f"\n{PC.WARNING}[!] User interrupted scan. Finalizing results...{PC.RESET}")
 
     if stats["total"] > 0 or stats["SKIPPED"] > 0:
-        print(f"\n{PC.HEADER}{'='*30} SESSION SUMMARY {'='*30}{PC.RESET}")
+        print(f"\n{PC.HEADER}{'=' * 30} SESSION SUMMARY {'=' * 30}{PC.RESET}")
         print(f"Total Files Found:   {len(files_to_process)}")
         print(f"Files Analyzed:      {stats['total']}")
         print(f"{PC.SUCCESS}Whitelisted/Safe:    {stats.get('TRUSTED', 0)}{PC.RESET}")
@@ -205,7 +209,7 @@ def main():
         print(f"{PC.SUCCESS}Clean/Heuristic:     {stats.get('CLEAN', 0)}{PC.RESET}")
         if stats["SKIPPED"] > 0:
             print(f"{PC.WARNING}Skipped (Too Large): {stats['SKIPPED']}{PC.RESET}")
-        print(f"{PC.HEADER}{'='*77}{PC.RESET}")
+        print(f"{PC.HEADER}{'=' * 77}{PC.RESET}")
 
     if args.log:
         try:
@@ -219,6 +223,7 @@ def main():
             print(f"\n{PC.SUCCESS}[+] Analysis log saved to: {args.log}{PC.RESET}")
         except Exception as e:
             print(f"\n{PC.CRITICAL}[!] Failed to write log file: {e}{PC.RESET}")
+
 
 if __name__ == '__main__':
     main()
