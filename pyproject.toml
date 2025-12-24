@@ -19,8 +19,7 @@ dependencies = [
     "oletools",
     "pypdf",
     "colorama",
-    "pyyaml",
-    "tqdm"
+    "pyyaml"
 ]
 
 classifiers = [
@@ -33,8 +32,13 @@ classifiers = [
 ]
 
 [project.scripts]
-
 prism = "prism.main:main"
 
 [project.urls]
 "Homepage" = "https://github.com/guyvolvo/prism"
+
+
+[tool.setuptools.packages.find]
+
+where = ["."]
+include = ["prism*"]

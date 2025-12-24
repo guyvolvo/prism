@@ -8,12 +8,6 @@ import threading
 import concurrent.futures
 from datetime import datetime
 
-try:
-    from tqdm import tqdm
-except ImportError:
-    print("[!] Error: 'tqdm' library is required. Run: pip install tqdm")
-    sys.exit(1)
-
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vendor_path = os.path.join(current_dir, 'vendor')
 if os.path.exists(vendor_path) and vendor_path not in sys.path:
@@ -34,7 +28,9 @@ from parsers.office_parser import analyze_office
 from parsers.pe_parser import analyze_pe
 
 MAX_FILE_SIZE = 100 * 1024 * 1024
+
 stats_lock = threading.Lock()
+print_lock = threading.Lock()
 
 
 def resolve_api_key(args_api):
@@ -107,13 +103,15 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             stats[status] = stats.get(status, 0) + 1
             stats["total"] += 1
 
-        if args.json:
-            tqdm.write(json.dumps(report, indent=4))
-        else:
-            generate_report(report)
+        with print_lock:
+            if args.json:
+                print(json.dumps(report, indent=4))
+            else:
+                generate_report(report)
 
     except Exception as e:
-        tqdm.write(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}{PC.RESET}")
+        with print_lock:
+            print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}{PC.RESET}")
 
 
 def main():
@@ -143,22 +141,20 @@ def main():
         files_to_process.append(args.target)
 
     results_log = []
-    stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0, "SKIPPED": 0}
+    stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0, "SKIPPED": 0, "TRUSTED": 0}
 
     start_time = datetime.now()
 
-    print(f"{PC.INFO}[*] Prism Engine Ready. Workers: {args.threads} | Targets: {len(files_to_process)}{PC.RESET}")
+    print(f"{PC.INFO}[*] Prism Engine Ready. Workers: {args.threads} | Targets: {len(files_to_process)}{PC.RESET}\n")
 
     try:
-        with tqdm(total=len(files_to_process), desc="Scanning", unit="file", colour="cyan") as pbar:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-                futures = [executor.submit(process_file_worker, f, args, api_key, stats, results_log) for f in
-                           files_to_process]
-                for future in concurrent.futures.as_completed(futures):
-                    future.result()
-                    pbar.update(1)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
+            futures = [executor.submit(process_file_worker, f, args, api_key, stats, results_log) for f in
+                       files_to_process]
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
     except KeyboardInterrupt:
-        print(f"\n{PC.WARNING}[!] User interrupted scan.{PC.RESET}")
+        print(f"\n{PC.WARNING}[!] User interrupted scan. Displaying partial results...{PC.RESET}")
 
     end_time = datetime.now()
     duration = end_time - start_time
@@ -170,6 +166,10 @@ def main():
         print(f"{PC.CRITICAL}Malicious:           {stats.get('CRITICAL', 0)}{PC.RESET}")
         print(f"{PC.WARNING}Suspicious:          {stats.get('SUSPICIOUS', 0)}{PC.RESET}")
         print(f"{PC.SUCCESS}Clean:               {stats.get('CLEAN', 0)}{PC.RESET}")
+        if stats.get('TRUSTED'):
+            print(f"{PC.SUCCESS}Whitelisted:         {stats.get('TRUSTED', 0)}{PC.RESET}")
+        if stats["SKIPPED"] > 0:
+            print(f"{PC.WARNING}Skipped (>100MB):    {stats['SKIPPED']}{PC.RESET}")
         print(f"{PC.HEADER}{'=' * 77}{PC.RESET}")
 
     if args.log:
