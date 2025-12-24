@@ -110,17 +110,28 @@ def print_metadata_only(file_path, sha256_hash, md5_hash, mime_type):
 def process_file_worker(file_path, args, api_key, stats, results_log):
     try:
         if not os.path.exists(file_path): return
-        file_size = os.path.getsize(file_path)
+
+        with open(file_path, "rb") as f:
+            raw_bytes = f.read()
+
+        file_size = len(raw_bytes)
 
         if file_size > MAX_FILE_SIZE and not args.large:
             with stats_lock: stats["SKIPPED"] += 1
             return
 
-        mime_type, _ = mimetypes.guess_type(file_path)
-        mime_type = mime_type or "application/octet-stream"
-
-        with open(file_path, "rb") as f:
-            raw_bytes = f.read()
+        header = raw_bytes[:4]
+        if header.startswith(b"%PDF"):
+            mime_type = "application/pdf"
+        elif header.startswith(b"PK"):
+            mime_type = "application/zip"
+        elif header.startswith(b"MZ"):
+            mime_type = "application/x-dosexec"
+        elif header.startswith(b"\x7fELF"):
+            mime_type = "application/x-executable"
+        else:
+            mime_type, _ = mimetypes.guess_type(file_path)
+            mime_type = mime_type or "application/octet-stream"
 
         sha256 = hashlib.sha256(raw_bytes).hexdigest()
         md5 = hashlib.md5(raw_bytes).hexdigest()
@@ -141,11 +152,19 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
                 return
 
         scanner = get_scanner()
-        parser_data = triage_router(file_path) or {"Status": "Error"}
+        parser_data = triage_router(file_path)
+        if not isinstance(parser_data, dict):
+            parser_data = {"Status": "Unknown", "Triggers": [], "Stream_Results": []}
+
         triage_data = triage(file_path=file_path, data=raw_bytes, scanner=scanner, api_key=api_key)
 
-        if not triage_data:
+        if not isinstance(triage_data, dict):
             triage_data = {"Status": "CLEAN", "Score": 0}
+
+        if triage_data.get("Status") == "CLEAN" and parser_data.get("Status") == "SUSPICIOUS":
+            triage_data["Status"] = "SUSPICIOUS"
+            if "Triggers" in parser_data:
+                triage_data.setdefault("Triggers", []).extend(parser_data["Triggers"])
 
         report["analysis"] = triage_data
         report["structure"] = parser_data
