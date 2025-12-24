@@ -189,7 +189,12 @@ def main():
     if args.log:
         try:
             with open(args.log, 'w', encoding='utf-8') as f:
-                json.dump(results_log, f, indent=4)
+                json.dump(
+                    results_log,
+                    f,
+                    indent=4,
+                    default=lambda o: o.decode('utf-8', errors='ignore') if isinstance(o, bytes) else str(o)
+                )
             print(f"\n{PC.SUCCESS}[+] Analysis log saved to: {args.log}{PC.RESET}")
         except Exception as e:
             print(f"\n{PC.CRITICAL}[!] Failed to write log file: {e}{PC.RESET}")
