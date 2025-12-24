@@ -63,6 +63,19 @@ def resolve_api_key(args_api):
 
 
 def triage_router(file_path):
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(4)
+    except Exception:
+        header = b""
+
+    if header.startswith(b"%PDF"):
+        return analyze_pdf(file_path)
+    elif header.startswith(b"PK\x03\x04"):
+        return analyze_office(file_path)
+    elif header.startswith(b"MZ"):
+        return analyze_pe(file_path)
+
     ext = os.path.splitext(file_path)[1].lower()
     if ext == ".pdf":
         return analyze_pdf(file_path)
@@ -70,6 +83,7 @@ def triage_router(file_path):
         return analyze_office(file_path)
     elif ext in [".exe", ".dll", ".bin", ".sys", ".com"]:
         return analyze_pe(file_path)
+
     return {"Stream_Results": [], "Triggers": [], "Status": "Unknown"}
 
 
