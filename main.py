@@ -13,6 +13,8 @@ import hashlib
 import mimetypes
 from datetime import datetime
 
+MAX_FILE_SIZE = 100 * 1024 * 1024
+
 try:
     from dotenv import load_dotenv, find_dotenv, set_key
     load_dotenv(find_dotenv())
@@ -32,7 +34,6 @@ def resolve_api_key(args_api):
     env_path = find_dotenv()
     if not env_path:
         env_path = os.path.join(current_dir, '.env')
-
     if isinstance(args_api, str):
         clean_key = args_api.strip("'").strip('"')
         print(f"{PC.INFO}[+] API Key provided via command line.")
@@ -44,11 +45,8 @@ def resolve_api_key(args_api):
         except Exception as e:
             print(f"{PC.WARNING}[!] Error saving key to .env: {e}{PC.RESET}")
             return clean_key
-
     raw_key = os.getenv("BAZAAR_API_KEY")
-    if raw_key:
-        return raw_key.strip("'").strip('"')
-    return None
+    return raw_key.strip("'").strip('"') if raw_key else None
 
 def triage_router(file_path):
     ext = os.path.splitext(file_path)[1].lower()
@@ -82,11 +80,11 @@ def main():
     parser.add_argument("target", nargs='?', help="Path to a file or a directory to scan")
     parser.add_argument("-r", "--recursive", action="store_true", help="Recursively scan directories")
     parser.add_argument("-j", "--json", action="store_true", help="Output raw JSON data")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Detailed output")
     parser.add_argument("-o", "--log", help="Save results to a JSON file")
     parser.add_argument("-m", "--metadata", action="store_true", help="Only show file metadata")
     parser.add_argument("-s", "--scan", action="store_true", help="Force scan with metadata")
-    parser.add_argument("--api", nargs='?', const=True, help="Provide/Save API Key or show current key if used alone")
+    parser.add_argument("--large", action="store_true", help="Bypass 100MB safety limit")
+    parser.add_argument("--api", nargs='?', const=True, help="Provide/Save API Key")
     args = parser.parse_args()
 
     api_key = resolve_api_key(args.api)
@@ -119,71 +117,85 @@ def main():
         sys.exit(1)
 
     results_log = []
-    stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0}
+    stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0, "SKIPPED": 0}
 
     mode_text = "Metadata Mode" if (args.metadata and not args.scan) else "Full Triage"
     print(f"{PC.INFO}[*] Prism engine ready. Mode: {mode_text} | Targets: {len(files_to_process)}\n")
 
-    for file_path in files_to_process:
-        try:
-            with open(file_path, "rb") as f:
-                raw_bytes = f.read()
-
-            file_sha256 = hashlib.sha256(raw_bytes).hexdigest()
-            file_md5 = hashlib.md5(raw_bytes).hexdigest()
-
-            if args.metadata:
-                print_metadata_only(file_path, file_sha256, file_md5)
-                if not args.scan:
+    try:
+        for file_path in files_to_process:
+            try:
+                current_size = os.path.getsize(file_path)
+                if current_size > MAX_FILE_SIZE and not args.large:
+                    print(f"{PC.WARNING}[!] Skipping {os.path.basename(file_path)}: File exceeds 100MB.{PC.RESET}")
+                    stats["SKIPPED"] += 1
                     continue
 
-            scanner = get_scanner()
-            parser_data = triage_router(file_path)
-            heuristics = parser_data.get("Triggers", [])
+                with open(file_path, "rb") as f:
+                    raw_bytes = f.read()
 
-            triage_data = triage(
-                raw_bytes,
-                scanner,
-                heuristics=heuristics,
-                file_hash=file_sha256,
-                api_key=api_key
-            )
+                file_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+                file_md5 = hashlib.md5(raw_bytes).hexdigest()
 
-            all_triggers = triage_data.get("YARA_Matches", []) + triage_data.get("Heuristics", [])
-            triage_data["Triggers"] = all_triggers
+                if args.metadata:
+                    print_metadata_only(file_path, file_sha256, file_md5)
+                    if not args.scan:
+                        continue
 
-            final_report = {
-                "file_info": {
-                    "name": os.path.basename(file_path),
-                    "path": file_path,
-                    "timestamp": datetime.now().isoformat(),
-                    "sha256": file_sha256,
-                    "md5": file_md5
-                },
-                "structure": parser_data,
-                "analysis": triage_data
-            }
+                scanner = get_scanner()
+                parser_data = triage_router(file_path)
+                heuristics = parser_data.get("Triggers", [])
 
-            results_log.append(final_report)
-            status = triage_data.get("Status", "CLEAN")
-            stats[status] = stats.get(status, 0) + 1
-            stats["total"] += 1
+                triage_data = triage(
+                    raw_bytes,
+                    scanner,
+                    heuristics=heuristics,
+                    file_hash=file_sha256,
+                    api_key=api_key
+                )
 
-            if args.json:
-                print(json.dumps(final_report, indent=4))
-            else:
-                generate_report(final_report)
+                all_triggers = triage_data.get("YARA_Matches", []) + triage_data.get("Heuristics", [])
+                triage_data["Triggers"] = all_triggers
 
-        except Exception as e:
-            print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}")
-            continue
+                final_report = {
+                    "file_info": {
+                        "name": os.path.basename(file_path),
+                        "path": file_path,
+                        "timestamp": datetime.now().isoformat(),
+                        "sha256": file_sha256,
+                        "md5": file_md5,
+                        "size": current_size
+                    },
+                    "structure": parser_data,
+                    "analysis": triage_data
+                }
 
-    if stats["total"] > 0:
+                results_log.append(final_report)
+                status = triage_data.get("Status", "CLEAN")
+                stats[status] = stats.get(status, 0) + 1
+                stats["total"] += 1
+
+                if args.json:
+                    print(json.dumps(final_report, indent=4))
+                else:
+                    generate_report(final_report)
+
+            except Exception as e:
+                print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}")
+                continue
+
+    except KeyboardInterrupt:
+        print(f"\n{PC.WARNING}[!] User interrupted scan. Finalizing results...{PC.RESET}")
+
+    if stats["total"] > 0 or stats["SKIPPED"] > 0:
         print(f"\n{PC.HEADER}{'='*30} SESSION SUMMARY {'='*30}{PC.RESET}")
-        print(f"Total Files Scanned: {stats['total']}")
-        print(f"{PC.CRITICAL}Malicious/Critical: {stats['CRITICAL']}{PC.RESET}")
-        print(f"{PC.WARNING}Suspicious:         {stats['SUSPICIOUS']}{PC.RESET}")
-        print(f"{PC.SUCCESS}Clean:              {stats['CLEAN']}{PC.RESET}")
+        print(f"Total Files Found:   {len(files_to_process)}")
+        print(f"Files Analyzed:      {stats['total']}")
+        print(f"{PC.CRITICAL}Malicious/Critical:  {stats['CRITICAL']}{PC.RESET}")
+        print(f"{PC.WARNING}Suspicious:          {stats['SUSPICIOUS']}{PC.RESET}")
+        print(f"{PC.SUCCESS}Clean:               {stats['CLEAN']}{PC.RESET}")
+        if stats["SKIPPED"] > 0:
+            print(f"{PC.WARNING}Skipped (Too Large): {stats['SKIPPED']}{PC.RESET}")
         print(f"{PC.HEADER}{'='*77}{PC.RESET}")
 
     if args.log:
