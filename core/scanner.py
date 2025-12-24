@@ -62,10 +62,14 @@ class PrismScanner:
         if not self.rules:
             return []
         try:
-            matches = self.rules.match(data=data)
+
+            matches = self.rules.match(data=data, fast=True, timeout=15)
             return [f"{m.namespace}:{m.rule}" for m in matches]
-        except Exception:
-            return []
+        except yara.TimeoutError:
+            print("[!] YARA Scan timed out - sample may be highly complex.")
+            return ["error:scan_timeout"]
+        except Exception as e:
+            return [f"error:{str(e)}"]
 
 
 def get_secure_session():
@@ -86,23 +90,42 @@ _session = get_secure_session()
 
 def check_malware_bazaar(file_hash: str):
     """
-    Queries MalwareBazaar for hash reputation.
+    Queries MalwareBazaar for hash reputation
     """
     if not API_KEY:
+        print("[!] Warning: BAZAAR_API_KEY not found in environment.")
         return None
 
     url = "https://mb-api.abuse.ch/api/v1/"
-    headers = {"Auth-Key": API_KEY}
-    query_data = {'query': 'get_info', 'hash': file_hash}
+
+    headers = {
+        "Auth-Key": API_KEY,
+        "User-Agent": "Prism-Malware-Scanner/1.0"
+    }
+
+    query_data = {
+        'query': 'get_info',
+        'hash': file_hash
+    }
 
     try:
         response = _session.post(url, data=query_data, headers=headers, timeout=5)
+
         if response.status_code == 200:
             res_json = response.json()
-            if res_json.get('query_status') == 'ok':
+            query_status = res_json.get('query_status')
+
+            if query_status != 'ok':
+                print(f"[*] MalwareBazaar Query Status: {query_status}")
+
+            if query_status == 'ok':
                 return res_json['data'][0]
-    except Exception:
-        pass
+        else:
+            print(f"[!] MalwareBazaar HTTP Error: {response.status_code}")
+
+    except Exception as e:
+        print(f"[!] MalwareBazaar Connection Error: {e}")
+
     return None
 
 
