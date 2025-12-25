@@ -41,6 +41,26 @@ def resolve_api_key(args_api):
 
     SERVICE_NAME = "prism_scanner"
     KEY_NAME = "bazaar_api_key"
+    ENV_FILE = ".env"
+
+    def save_to_env(key):
+        """Helper to append or update key in .env file."""
+        try:
+            lines = []
+            if os.path.exists(ENV_FILE):
+                with open(ENV_FILE, "r") as f:
+                    lines = f.readlines()
+
+            # Remove existing BAZAAR_API_KEY if present
+            new_lines = [line for line in lines if not line.startswith("BAZAAR_API_KEY=")]
+            new_lines.append(f'BAZAAR_API_KEY="{key}"\n')
+
+            with open(ENV_FILE, "w") as f:
+                f.writelines(new_lines)
+            print(f"{PC.SUCCESS}[+] API Key saved to {ENV_FILE}{PC.RESET}")
+        except Exception as e:
+            print(f"{PC.CRITICAL}[!] Failed to write to .env: {e}{PC.RESET}")
+
 
     # If user provided a key via command line, save it securely
     if isinstance(args_api, str):
@@ -93,7 +113,11 @@ def resolve_api_key(args_api):
     except (ImportError, Exception):
         pass
 
-    return os.getenv("BAZAAR_API_KEY")
+    env_key = os.getenv("BAZAAR_API_KEY")
+    if env_key:
+        return env_key
+
+    return None
 
 
 def triage_router(file_path):
