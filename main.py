@@ -9,7 +9,8 @@ import mimetypes
 import threading
 import concurrent.futures
 from datetime import datetime
-
+import logging
+logging.getLogger("keyring").setLevel(logging.WARNING) # Disable annoying logging from keyring
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vendor_path = os.path.join(current_dir, 'vendor')
 if os.path.exists(vendor_path) and vendor_path not in sys.path:
