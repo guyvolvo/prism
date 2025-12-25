@@ -19,7 +19,9 @@ dependencies = [
     "oletools",
     "pypdf",
     "colorama",
-    "pyyaml"
+    "pyyaml",
+    "keyring>=24.0.0",
+    "keyrings.alt>=4.1.0"
 ]
 
 classifiers = [
