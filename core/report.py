@@ -60,6 +60,14 @@ def generate_report(data):
     else:
         print(f"    Status:  {PC.SUCCESS}Not Found in Database{PC.RESET}")
 
+    whitelist_info = analysis.get('Whitelist_Info')
+    if whitelist_info:
+        print(f"\n[+] WHITELIST STATUS:")
+        print(f"    {PC.SUCCESS}✓ TRUSTED FILE (Known Legitimate Software){PC.RESET}")
+        print(f"    Source:       {whitelist_info.get('Source', 'Unknown')}")
+        print(f"    Identified:   {PC.INFO}{whitelist_info.get('Identified_As', 'System File')}{PC.RESET}")
+        print(f"    Hash Match:   {whitelist_info.get('Hash', 'N/A')[:16]}...")
+
     if trigger_count == 0 and not reputation:
         print("    -> No immediate triggers found.")
 
@@ -100,20 +108,30 @@ def generate_report(data):
     verdict = analysis.get('Status', 'CLEAN')
     is_malformed = any("Corrupt" in str(t) or "Malformed" in str(t) for t in all_struct_alerts)
 
-    if reputation:
+    # Check for whitelist first
+    whitelist_info = analysis.get('Whitelist_Info')
+    if whitelist_info:
+        verdict = f"TRUSTED - {whitelist_info.get('Identified_As', 'Known Legitimate Software')}"
+        v_color = PC.SUCCESS
+    elif reputation:
         verdict = "MALICIOUS (Known Reputation)"
+        v_color = PC.CRITICAL
     elif is_malformed or has_high_entropy_stream:
         if verdict == "CRITICAL":
             verdict = "MALICIOUS (Structural Critical)"
+            v_color = PC.CRITICAL
         elif verdict == "CLEAN":
             verdict = "SUSPICIOUS (Structural Anomaly)"
-
-    if "CRITICAL" in verdict or "MALICIOUS" in verdict:
-        v_color = PC.CRITICAL
-    elif "SUSPICIOUS" in verdict:
-        v_color = PC.WARNING
+            v_color = PC.WARNING
+        else:
+            v_color = PC.WARNING if "SUSPICIOUS" in verdict else PC.CRITICAL
     else:
-        v_color = PC.SUCCESS
+        if "CRITICAL" in verdict or "MALICIOUS" in verdict:
+            v_color = PC.CRITICAL
+        elif "SUSPICIOUS" in verdict:
+            v_color = PC.WARNING
+        else:
+            v_color = PC.SUCCESS
 
     print("\n" + "=" * 70)
     print(f"VERDICT: {v_color}{verdict}{PC.RESET}")

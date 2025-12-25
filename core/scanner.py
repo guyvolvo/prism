@@ -1,5 +1,7 @@
 import base64
 import os
+import threading
+
 import yara
 import math
 import re
@@ -18,6 +20,21 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_API_KEY = os.getenv("BAZAAR_API_KEY")
 
 _scanner_instance = None
+
+_whitelist_cache = {}
+_whitelist_cache_lock = threading.Lock()
+
+
+# Secure session generator upon request
+def get_secure_session():
+    session = requests.Session()
+    session.headers.update({"User-Agent": "Prism-Scanner/1.0 (UserAgent-2025-12-19)"})
+    retry_strategy = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
+    return session
+
+
+_session = get_secure_session()
 
 
 class PrismScanner:
@@ -72,9 +89,6 @@ def get_secure_session():
     return session
 
 
-_session = get_secure_session()
-
-
 def get_file_hash(file_path):
     sha256_hash = hashlib.sha256()
     try:
@@ -85,6 +99,7 @@ def get_file_hash(file_path):
     except Exception:
         return None
 
+
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -92,13 +107,23 @@ logger = logging.getLogger(__name__)
 
 
 def check_circl_whitelist(file_hash):
+    with _whitelist_cache_lock:
+        if file_hash in _whitelist_cache:
+            return _whitelist_cache[file_hash]
+
     url = f"https://hashlookup.circl.lu/lookup/sha256/{file_hash}"
     try:
         response = _session.get(url, timeout=3)
         response.raise_for_status()
         data = response.json()
         trust = data.get("hashlookup:trust", 50)
-        return (trust >= 50), data.get("FileName", "Known System File")
+        result = (trust >= 50), data.get("FileName", "Known System File")
+
+        # Cache result
+        with _whitelist_cache_lock:
+            _whitelist_cache[file_hash] = result
+
+        return result
 
     except requests.exceptions.Timeout:
         logger.warning(f"CIRCL lookup timeout for {file_hash[:8]}")
@@ -112,7 +137,11 @@ def check_circl_whitelist(file_hash):
     except Exception as e:
         logger.exception(f"Unexpected error in CIRCL lookup: {e}")
 
-    return False, None
+    result = (False, None)
+    with _whitelist_cache_lock:
+        _whitelist_cache[file_hash] = result
+
+    return result
 
 
 def check_malware_bazaar(file_hash: str, key: str = None):
@@ -169,9 +198,38 @@ def get_scanner():
     return _scanner_instance
 
 
-def triage(file_path, data: bytes, scanner=None, api_key=None, **kwargs):
-    file_hash = get_file_hash(file_path)
+def triage(file_path, data: bytes, scanner=None, api_key=None, file_hash=None, **kwargs):
+    file_hash = file_hash or get_file_hash(file_path)
     scanner = scanner or get_scanner()
+
+    is_whitelisted, whitelist_name = check_circl_whitelist(file_hash)
+
+    if is_whitelisted:
+        # File is in CIRCL trusted database
+        return {
+            "Status": "TRUSTED",
+            "Verdict": "TRUSTED",
+            "Score": "0/10",
+            "FP_Risk": "NONE",
+
+            "Yara_Matches": [],
+            "Heuristics": [],
+            "Reputation": None,
+            "MalwareBazaar_Found": False,
+
+            "Whitelist_Info": {
+                "Source": "CIRCL HasHLookup",
+                "Identified_As": whitelist_name,
+                "Hash": file_hash
+            },
+
+            "Threat_Indicators": [f"WHITELISTED: {whitelist_name}"],
+            "Entropy": shannon_entropy(data),
+            "Confidence_Metrics": {
+                "Intent_Score": 0,
+                "Uncertainty_Score": 0
+            }
+        }
 
     yara_matches = scanner.scan_bytes(data)
     heuristics = get_content_heuristics(data)
@@ -309,4 +367,3 @@ def triage(file_path, data: bytes, scanner=None, api_key=None, **kwargs):
             "Uncertainty_Score": uncertainty_score
         }
     }
-

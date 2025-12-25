@@ -117,9 +117,8 @@ def resolve_api_key(args_api):
     return stored_key
 
 
-def triage_router(file_path):
+def triage_router(file_path, api_key=None):
     try:
-
         with open(file_path, "rb") as f:
             chunk = f.read(2048)
     except Exception:
@@ -146,7 +145,11 @@ def triage_router(file_path):
         return analyze_pe(file_path)
 
     if b"%PDF" in chunk:
-        return analyze_pdf(file_path)
+        return analyze_pdf(file_path, api_key=api_key)
+
+    office_extensions = ['.doc', '.xls', '.ppt', '.docx', '.xlsx', '.pptx']
+    if os.path.splitext(file_path)[1].lower() in office_extensions:
+        return analyze_office(file_path, api_key=api_key)
 
     for magic in [b"\xca\xfe\xba\xbe", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xce"]:
         if magic in chunk:
@@ -186,10 +189,25 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             raw_bytes = f.read()
 
         sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        md5 = hashlib.md5(raw_bytes).hexdigest()
+        mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+
+        if args.metadata:
+            print_metadata_only(file_path, sha256, md5, mime)
+            if not args.scan:
+                with stats_lock: stats["total"] += 1
+                return
+
         scanner = get_scanner()
 
-        parser_data = triage_router(file_path)
-        triage_data = triage(file_path=file_path, data=raw_bytes, scanner=scanner, api_key=api_key)
+        parser_data = triage_router(file_path, api_key=api_key)
+        triage_data = triage(
+            file_path=file_path,
+            data=raw_bytes,
+            scanner=scanner,
+            api_key=api_key,
+            file_hash=sha256
+        )
 
         if not isinstance(parser_data, dict):
             parser_data = {"Status": "CLEAN", "Triggers": []}
@@ -198,22 +216,24 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
         final_status = triage_data.get("Status", "UNKNOWN")
 
-        struct_triggers = parser_data.get("Triggers", [])
-        critical_struct_issues = any(
-            "Hidden Executable" in str(t) or
-            "Polyglot" in str(t) or
-            "Malformed PE" in str(t)
-            for t in struct_triggers
-        )
+        if final_status == "TRUSTED":
+            pass
+        else:
+            struct_triggers = parser_data.get("Triggers", [])
+            critical_struct_issues = any(
+                "Hidden Executable" in str(t) or
+                "Polyglot" in str(t) or
+                "Malformed PE" in str(t)
+                for t in struct_triggers
+            )
 
-        if critical_struct_issues:
-            # Structural issues elevate suspicion
-            if final_status == "CLEAN":
-                final_status = "SUSPICIOUS"
-                triage_data["Status"] = final_status
-                triage_data.setdefault("Heuristics", []).append(
-                    "Elevated to SUSPICIOUS: Critical structural anomalies detected"
-                )
+            if critical_struct_issues:
+                if final_status == "CLEAN":
+                    final_status = "SUSPICIOUS"
+                    triage_data["Status"] = final_status
+                    triage_data.setdefault("Heuristics", []).append(
+                        "Elevated to SUSPICIOUS: Critical structural anomalies detected"
+                    )
 
         if "Score" not in triage_data:
             # Fallback scoring
@@ -222,7 +242,7 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
                                len(struct_triggers)
             triage_data["Score"] = f"{min(indicators_count * 2, 10)}/10"
 
-        assert triage_data["Status"] in {"CLEAN", "SUSPICIOUS", "MALICIOUS"}, \
+        assert triage_data["Status"] in {"CLEAN", "SUSPICIOUS", "MALICIOUS", "TRUSTED"}, \
             f"Invalid final status: {triage_data['Status']}"
 
         report = {
@@ -240,6 +260,7 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             "Verdict": final_status
         }
 
+
         with stats_lock:
             results_log.append(report)
 
@@ -248,6 +269,8 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
                 stats["CRITICAL"] += 1
             elif final_status == "SUSPICIOUS":
                 stats["SUSPICIOUS"] += 1
+            elif final_status == "TRUSTED":
+                stats["TRUSTED"] += 1
             else:
                 stats["CLEAN"] += 1
             stats["total"] += 1
