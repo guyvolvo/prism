@@ -37,6 +37,9 @@ stats_lock = threading.Lock()
 print_lock = threading.Lock()
 
 
+import os
+import re
+
 def resolve_api_key(args_api):
 
     SERVICE_NAME = "prism_scanner"
@@ -52,6 +55,12 @@ def resolve_api_key(args_api):
 
         try:
             import keyring
+            try:
+                from keyrings.alt.file import PlaintextKeyring
+                keyring.set_keyring(PlaintextKeyring())
+            except ImportError:
+                pass
+
             keyring.set_password(SERVICE_NAME, KEY_NAME, clean_key)
             print(f"{PC.SUCCESS}[+] API Key saved securely to system keyring{PC.RESET}")
             return clean_key
@@ -66,6 +75,12 @@ def resolve_api_key(args_api):
     if args_api is True:
         try:
             import keyring
+            try:
+                from keyrings.alt.file import PlaintextKeyring
+                keyring.set_keyring(PlaintextKeyring())
+            except ImportError:
+                pass
+
             stored_key = keyring.get_password(SERVICE_NAME, KEY_NAME)
             if stored_key:
                 print(f"{PC.INFO}[*] API Key loaded from secure storage{PC.RESET}")
@@ -87,6 +102,13 @@ def resolve_api_key(args_api):
 
     try:
         import keyring
+
+        try:
+            from keyrings.alt.file import PlaintextKeyring
+            keyring.set_keyring(PlaintextKeyring())
+        except ImportError:
+            pass
+
         stored_key = keyring.get_password(SERVICE_NAME, KEY_NAME)
         if stored_key:
             return stored_key
@@ -94,6 +116,7 @@ def resolve_api_key(args_api):
         pass
 
     return os.getenv("BAZAAR_API_KEY")
+
 
 
 def triage_router(file_path):
