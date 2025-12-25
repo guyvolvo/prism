@@ -1,6 +1,6 @@
 import re
 import zlib
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from core.scanner import triage, get_scanner, shannon_entropy
 
 
