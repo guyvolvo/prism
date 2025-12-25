@@ -19,6 +19,7 @@ DEFAULT_API_KEY = os.getenv("BAZAAR_API_KEY")
 
 _scanner_instance = None
 
+
 class PrismScanner:
     def __init__(self):
         self.rule_folders = [
@@ -84,18 +85,33 @@ def get_file_hash(file_path):
     except Exception:
         return None
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 def check_circl_whitelist(file_hash):
     url = f"https://hashlookup.circl.lu/lookup/sha256/{file_hash}"
     try:
         response = _session.get(url, timeout=3)
-        if response.status_code == 200:
-            data = response.json()
-            trust = data.get("hashlookup:trust", 50)
-            if trust >= 50:
-                return True, data.get("FileName", "Known System File")
-    except:
-        pass
+        response.raise_for_status()
+        data = response.json()
+        trust = data.get("hashlookup:trust", 50)
+        return (trust >= 50), data.get("FileName", "Known System File")
+
+    except requests.exceptions.Timeout:
+        logger.warning(f"CIRCL lookup timeout for {file_hash[:8]}")
+    except requests.exceptions.ConnectionError:
+        logger.warning("CIRCL service unavailable")
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code != 404:
+            logger.error(f"CIRCL HTTP error: {e}")
+    except ValueError as e:
+        logger.error(f"Invalid JSON from CIRCL: {e}")
+    except Exception as e:
+        logger.exception(f"Unexpected error in CIRCL lookup: {e}")
+
     return False, None
 
 
@@ -123,15 +139,26 @@ def shannon_entropy(data: bytes) -> float:
 def get_content_heuristics(data: bytes):
     h_list = []
     content = data.decode('utf-8', errors='ignore').lower()
+
+    # Context-aware pattern matching
     patterns = {
-        r"powershell": "PowerShell",
-        r"eval\(": "Dynamic Code",
-        r"base64": "Encoded Payload",
-        r"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}": "Raw IP Downloader"
+        r"powershell.+(-enc|-e|-w\s+hidden|-nop|-exec\s+bypass)": ("PowerShell Obfuscated/Hidden", 5),
+        r"(invoke-expression|iex)\s*\(": ("PowerShell Dynamic Execution", 4),
+        r"downloadstring|downloadfile": ("PowerShell Downloader", 5),
+
+        r"eval\s*\(": ("Dynamic Code Execution", 3),
+        r"exec\s*\(": ("Code Execution", 3),
+        r"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}": ("Raw IP URL", 3),
+        r"cmd.exe.+/c": ("Command Execution", 2),
+
+        r"base64": ("Base64 Encoding Found", 1),
+        r"powershell": ("PowerShell Reference", 1),
     }
-    for pattern, label in patterns.items():
+
+    for pattern, (label, weight) in patterns.items():
         if re.search(pattern, content):
-            h_list.append(f"Content Match: {label}")
+            h_list.append((f"Content Match: {label}", weight))
+
     return h_list
 
 
@@ -144,43 +171,142 @@ def get_scanner():
 
 def triage(file_path, data: bytes, scanner=None, api_key=None, **kwargs):
     file_hash = get_file_hash(file_path)
-
-    is_safe, info = check_circl_whitelist(file_hash)
-    if is_safe:
-        return {"Status": "TRUSTED", "Verdict": "CLEAN", "Score": "0/10", "Yara_Matches": [], "Heuristics": []}
-
     scanner = scanner or get_scanner()
+
     yara_matches = scanner.scan_bytes(data)
     heuristics = get_content_heuristics(data)
     entropy = shannon_entropy(data)
     reputation = check_malware_bazaar(file_hash, key=api_key)
+    parser_tier = str(kwargs.get('parser_tier', 'NONE')).upper()
 
+    intent_score = 0
+    uncertainty_score = 0
+    indicators = []
 
-    has_signature = len(yara_matches) > 0
-    has_reputation = reputation is not None
+    if yara_matches:
+        # Categorize YARA matches by severity
+        threat_keywords = ['trojan', 'ransomware', 'backdoor', 'rootkit', 'exploit', 'malware', 'webshell']
+        suspicious_keywords = ['packer', 'obfuscator', 'crypter', 'upx', 'suspicious']
+        capability_keywords = ['network', 'registry', 'file', 'process', 'injection', 'api']
 
+        threat_matches = []
+        suspicious_matches = []
+        capability_matches = []
 
-    parser_status = str(kwargs.get('parser_status', 'CLEAN')).upper()
-    is_anomaly = parser_status in ["CRITICAL", "MALICIOUS", "SUSPICIOUS"]
-    is_high_entropy = entropy > 7.5
+        for match in yara_matches:
+            match_lower = match.lower()
+            if any(keyword in match_lower for keyword in threat_keywords):
+                threat_matches.append(match)
+            elif any(keyword in match_lower for keyword in suspicious_keywords):
+                suspicious_matches.append(match)
+            elif any(keyword in match_lower for keyword in capability_keywords):
+                capability_matches.append(match)
+            else:
+                suspicious_matches.append(match)
 
-    if has_signature or has_reputation:
+        if threat_matches:
+            intent_score += 8
+            indicators.append(f"YARA THREAT: {', '.join(threat_matches)}")
+
+        if suspicious_matches:
+            intent_score += 4
+            indicators.append(f"YARA SUSPICIOUS: {', '.join(suspicious_matches)}")
+
+        if capability_matches and (threat_matches or suspicious_matches):
+            intent_score += 2
+            indicators.append(f"YARA CAPABILITIES: {', '.join(capability_matches)}")
+        elif capability_matches:
+            indicators.append(f"YARA CAPABILITIES (low risk): {', '.join(capability_matches)}")
+
+    if reputation:
+        intent_score += 15
+        indicators.append(f"REPUTATION: {reputation.get('signature', 'Known Malware')}")
+
+    for heuristic_tuple in heuristics:
+        if isinstance(heuristic_tuple, tuple):
+            heuristic_text, weight = heuristic_tuple
+            intent_score += weight
+            indicators.append(f"Heuristic: {heuristic_text} (weight: {weight})")
+        else:
+            intent_score += 2
+            indicators.append(f"Heuristic: {heuristic_tuple}")
+
+    if parser_tier == 'VERIFIED' and intent_score > 0:
+        intent_score += 3
+        indicators.append("Executable structure confirms capability")
+
+    if parser_tier == 'MALFORMED':
+        uncertainty_score += 7
+        indicators.append("STRUCTURAL ANOMALY: Malformed/Truncated Header")
+
+    if entropy > 7.9:
+        uncertainty_score += 6
+        indicators.append(f"Very High Entropy ({entropy}): Strong encryption/packing/random data")
+    elif entropy > 7.7:
+        uncertainty_score += 4
+        indicators.append(f"High Entropy ({entropy}): Compression/packing suspected")
+    elif entropy > 7.4:
+        uncertainty_score += 2
+        indicators.append(f"Moderate-High Entropy ({entropy}): May indicate packing")
+
+    if entropy > 7.7 and intent_score == 0:
+        indicators.append("NOTE: High entropy alone - likely legitimate compressed/encrypted data")
+
+    status = "CLEAN"
+
+    if intent_score >= 15:
         status = "MALICIOUS"
-        score_val = 10
-    elif is_anomaly or is_high_entropy or heuristics:
+    elif intent_score >= 10:
+        if uncertainty_score < 5:
+            status = "MALICIOUS"
+        else:
+            status = "SUSPICIOUS"
+    elif intent_score >= 5:
         status = "SUSPICIOUS"
-        score_val = 6
-    else:
-        status = "CLEAN"
-        score_val = 0
+    elif intent_score > 0:
+        if yara_matches or heuristics:
+            status = "SUSPICIOUS"
+        else:
+            status = "CLEAN"
+
+    if uncertainty_score >= 7 and status == "MALICIOUS":
+        if not reputation:
+            status = "SUSPICIOUS"
+            indicators.append("VERDICT DOWNGRADED: High uncertainty (FP risk)")
+
+    fp_risk = "LOW"
+    if uncertainty_score >= 10:
+        fp_risk = "HIGH"
+    elif uncertainty_score >= 5:
+        fp_risk = "MEDIUM"
+
+    yara_list = [ind for ind in indicators if ind.startswith("YARA:")]
+    reputation_dict = None
+    if reputation:
+        reputation_dict = {
+            'signature': reputation.get('signature', 'Unknown'),
+            'sha256_hash': file_hash,
+            'tags': reputation.get('tags', [])
+        }
+
+    heuristics_list = [ind for ind in indicators if not ind.startswith("YARA:") and not ind.startswith("REPUTATION:")]
 
     return {
         "Status": status,
         "Verdict": status,
-        "Score": f"{score_val}/10",
-        "score": score_val,
+        "Score": f"{min(intent_score, 10)}/10",
+        "FP_Risk": fp_risk,
+
+        "Yara_Matches": yara_list,
+        "Heuristics": heuristics_list,
+        "Reputation": reputation_dict,
+        "MalwareBazaar_Found": bool(reputation),
+
+        "Threat_Indicators": indicators,
         "Entropy": entropy,
-        "Yara_Matches": yara_matches,
-        "Heuristics": heuristics,
-        "Reputation": reputation
+        "Confidence_Metrics": {
+            "Intent_Score": intent_score,
+            "Uncertainty_Score": uncertainty_score
+        }
     }
+

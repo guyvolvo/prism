@@ -8,9 +8,16 @@ def generate_report(data):
 
     file_name = info.get('name', 'Unknown')
     entropy = analysis.get('Entropy', 0)
-    yara_matches = analysis.get('YARA_Matches', [])
+    yara_matches = analysis.get('YARA_Matches', []) or analysis.get('Yara_Matches', [])
     heuristics = analysis.get('Heuristics', [])
     reputation = analysis.get('Reputation')
+    # check if MalwareBazaar found something
+    if not reputation and analysis.get('MalwareBazaar_Found'):
+        # Create minimal reputation dict
+        reputation = {
+            'signature': 'Known Malware (MalwareBazaar)',
+            'tags': []
+        }
 
     print("=" * 70)
     print(f"PRISM TRIAGE REPORT | {info.get('timestamp', 'N/A')}")
@@ -33,6 +40,16 @@ def generate_report(data):
 
     if entropy > 7.5:
         print(f"    -> {PC.WARNING}High Entropy ({entropy}): Potential Packing/Encryption{PC.RESET}")
+    confidence = analysis.get('Confidence_Metrics', {})
+    if confidence:
+        intent = confidence.get('Intent_Score', 0)
+        uncertainty = confidence.get('Uncertainty_Score', 0)
+        fp_risk = analysis.get('FP_Risk', 'UNKNOWN')
+
+        print(f"\n[+] CONFIDENCE ANALYSIS:")
+        print(f"    Intent Score:      {intent}/10")
+        print(f"    Uncertainty Score: {uncertainty}/10")
+        print(f"    False Positive Risk: {PC.WARNING if fp_risk != 'LOW' else PC.SUCCESS}{fp_risk}{PC.RESET}")
 
     print(f"\n[+] MALWAREBAZAAR: ")
     if reputation:

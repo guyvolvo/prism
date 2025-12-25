@@ -1,0 +1,11 @@
+
+LoadLibraryA
+GetProcAddress
+Sleep
+MessageBoxA
+
+--- suspicious strings ---
+VirtualAlloc
+WriteProcessMemory
+CreateRemoteThread
+NtQueryInformationProcess

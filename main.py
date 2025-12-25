@@ -1,4 +1,6 @@
 import os
+import pathlib
+import re
 import sys
 import argparse
 import json
@@ -26,45 +28,78 @@ from core.report import generate_report
 from parsers.pdf_parser import analyze_pdf
 from parsers.office_parser import analyze_office
 from parsers.pe_parser import analyze_pe
+from secure_file_collection import SecureFileCollector, validate_before_processing
 
 MAX_FILE_SIZE = 100 * 1024 * 1024
 
+# Thread synchronization locks
 stats_lock = threading.Lock()
 print_lock = threading.Lock()
 
 
 def resolve_api_key(args_api):
-    env_path = find_dotenv() or os.path.join(current_dir, '.env')
-    existing_key = os.getenv("BAZAAR_API_KEY")
 
+    SERVICE_NAME = "prism_scanner"
+    KEY_NAME = "bazaar_api_key"
+
+    # If user provided a key via command line, save it securely
     if isinstance(args_api, str):
-        clean_key = args_api.strip("'").strip('"')
-        with print_lock:
-            print(f"{PC.INFO}[+] API Key provided via command line. Saving to {env_path}...{PC.RESET}")
+        clean_key = args_api.strip("'\"")
+
+        # Validate key format
+        if not re.match(r'^[a-fA-F0-9]{64}$', clean_key):
+            print(f"{PC.WARNING}[!] API key format validation skipped (adjust regex if needed){PC.RESET}")
+
         try:
-            set_key(env_path, "BAZAAR_API_KEY", clean_key)
-            os.environ["BAZAAR_API_KEY"] = clean_key
+            import keyring
+            keyring.set_password(SERVICE_NAME, KEY_NAME, clean_key)
+            print(f"{PC.SUCCESS}[+] API Key saved securely to system keyring{PC.RESET}")
+            return clean_key
+        except ImportError:
+            print(f"{PC.WARNING}[!] keyring not installed, falling back to environment variable{PC.RESET}")
             return clean_key
         except Exception as e:
-            with print_lock:
-                print(f"{PC.CRITICAL}[!] Error saving key: {e}{PC.RESET}")
+            print(f"{PC.CRITICAL}[!] Error saving key: {e}{PC.RESET}")
             return clean_key
 
+    # If user wants to view current key
     if args_api is True:
-        with print_lock:
-            if existing_key:
-                masked = f"{existing_key[:4]}...{existing_key[-4:]}"
-                print(f"{PC.INFO}[*] Current API Key: {PC.WARNING}{masked}{PC.RESET} (Loaded from {env_path})")
+        try:
+            import keyring
+            stored_key = keyring.get_password(SERVICE_NAME, KEY_NAME)
+            if stored_key:
+                print(f"{PC.INFO}[*] API Key loaded from secure storage{PC.RESET}")
+                return stored_key
             else:
-                print(f"{PC.CRITICAL}[!] No keys are loaded. Use --api <KEY> to set one.{PC.RESET}")
-        return existing_key
+                print(f"{PC.CRITICAL}[!] No API key found in secure storage{PC.RESET}")
+                # Fallback to environment
+                env_key = os.getenv("BAZAAR_API_KEY")
+                if env_key:
+                    print(f"{PC.INFO}[*] Using API key from environment variable{PC.RESET}")
+                    return env_key
+                return None
+        except ImportError:
+            print(f"{PC.WARNING}[!] keyring not installed, checking environment variable{PC.RESET}")
+            return os.getenv("BAZAAR_API_KEY")
+        except Exception as e:
+            print(f"{PC.CRITICAL}[!] Error retrieving key: {e}{PC.RESET}")
+            return None
 
-    return existing_key.strip("'").strip('"') if existing_key else None
+    try:
+        import keyring
+        stored_key = keyring.get_password(SERVICE_NAME, KEY_NAME)
+        if stored_key:
+            return stored_key
+    except (ImportError, Exception):
+        pass
+
+    return os.getenv("BAZAAR_API_KEY")
 
 
 def triage_router(file_path):
+
     try:
-        # Read the first 2048 bytes to find hidden headers
+
         with open(file_path, "rb") as f:
             chunk = f.read(2048)
     except Exception:
@@ -75,7 +110,8 @@ def triage_router(file_path):
             "Status": "CRITICAL",
             "Triggers": ["Hidden Executable", "Malformed", "Polyglot Detected"],
             "Stream_Results": [{"Section_Name": stream_msg, "Entropy": 7.9}],
-            "Heuristic Alerts": [f"CRITICAL: Hidden {os_type} binary discovered inside {os.path.splitext(file_path)[1]}"]
+            "Heuristic Alerts": [
+                f"CRITICAL: Hidden {os_type} binary discovered inside {os.path.splitext(file_path)[1]}"]
         }
 
     if b"\x7fELF" in chunk:
@@ -113,61 +149,84 @@ def print_metadata_only(file_path, sha256_hash, md5_hash, mime_type):
 
 
 def process_file_worker(file_path, args, api_key, stats, results_log):
+
     try:
-        if not os.path.exists(file_path): return
+
+        is_valid, reason = validate_before_processing(file_path, args.large)
+        if not is_valid:
+            with print_lock:
+                print(f"{PC.WARNING}[!] Validation failed for {os.path.basename(file_path)}: {reason}{PC.RESET}")
+            with stats_lock:
+                stats["SKIPPED"] += 1
+            return
+
+        if not os.path.exists(file_path):
+            return
+
         with open(file_path, "rb") as f:
             raw_bytes = f.read()
 
         sha256 = hashlib.sha256(raw_bytes).hexdigest()
         scanner = get_scanner()
 
+
         parser_data = triage_router(file_path)
         triage_data = triage(file_path=file_path, data=raw_bytes, scanner=scanner, api_key=api_key)
 
-        if not isinstance(parser_data, dict): parser_data = {"Status": "CLEAN", "Triggers": []}
-        if not isinstance(triage_data, dict): triage_data = {"Status": "CLEAN", "Yara_Matches": [], "Heuristics": []}
+        if not isinstance(parser_data, dict):
+            parser_data = {"Status": "CLEAN", "Triggers": []}
+        if not isinstance(triage_data, dict):
+            triage_data = {"Status": "CLEAN", "Yara_Matches": [], "Heuristics": []}
 
-        yara_matches = triage_data.get("Yara_Matches", [])
-        heuristics = triage_data.get("Heuristics", [])
+        final_status = triage_data.get("Status", "UNKNOWN")
+
         struct_triggers = parser_data.get("Triggers", [])
+        critical_struct_issues = any(
+            "Hidden Executable" in str(t) or
+            "Polyglot" in str(t) or
+            "Malformed PE" in str(t)
+            for t in struct_triggers
+        )
 
-        import math
-        from collections import Counter
-        entropy = 0
-        if raw_bytes:
-            counts = Counter(raw_bytes)
-            entropy = -sum((count / len(raw_bytes)) * math.log2(count / len(raw_bytes)) for count in counts.values())
+        if critical_struct_issues:
+            # Structural issues elevate suspicion
+            if final_status == "CLEAN":
+                final_status = "SUSPICIOUS"
+                triage_data["Status"] = final_status
+                triage_data.setdefault("Heuristics", []).append(
+                    "Elevated to SUSPICIOUS: Critical structural anomalies detected"
+                )
 
-        high_entropy_flag = 1 if entropy > 7.7 else 0
+        if "Score" not in triage_data:
+            # Fallback scoring
+            indicators_count = len(triage_data.get("Yara_Matches", [])) + \
+                               len(triage_data.get("Heuristics", [])) + \
+                               len(struct_triggers)
+            triage_data["Score"] = f"{min(indicators_count * 2, 10)}/10"
 
-        total_indicators = len(yara_matches) + len(heuristics) + len(struct_triggers) + high_entropy_flag
-
-
-        if triage_data.get("MalwareBazaar_Found"):
-            final_status = "MALICIOUS"
-        elif total_indicators >= 3:
-            final_status = "MALICIOUS"
-        elif total_indicators >= 1:
-            final_status = "SUSPICIOUS"
-        else:
-            final_status = "CLEAN"
-
-        triage_data["Status"] = final_status
-        triage_data["Score"] = f"{min(total_indicators * 2, 10)}/10"  # Generates a score from the count
-
-        triage_data["score"] = triage_data["Score"]
+        assert triage_data["Status"] in {"CLEAN", "SUSPICIOUS", "MALICIOUS"}, \
+            f"Invalid final status: {triage_data['Status']}"
 
         report = {
-            "scan_info": {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                          "mime_type": "application/octet-stream"},
-            "file_info": {"name": os.path.basename(file_path), "sha256": sha256, "size_bytes": len(raw_bytes)},
+            "scan_info": {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "mime_type": "application/octet-stream"
+            },
+            "file_info": {
+                "name": os.path.basename(file_path),
+                "sha256": sha256,
+                "size_bytes": len(raw_bytes)
+            },
             "analysis": triage_data,
             "structure": parser_data,
             "Verdict": final_status
         }
 
+
         with stats_lock:
             results_log.append(report)
+
+            # Update statistics
             if final_status == "MALICIOUS":
                 stats["CRITICAL"] += 1
             elif final_status == "SUSPICIOUS":
@@ -179,9 +238,23 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
         with print_lock:
             generate_report(report)
 
+    except PermissionError as e:
+        with print_lock:
+            print(f"{PC.CRITICAL}[!] Permission denied: {file_path} - {e}{PC.RESET}")
+        with stats_lock:
+            stats["SKIPPED"] += 1
+
+    except OSError as e:
+        with print_lock:
+            print(f"{PC.CRITICAL}[!] OS error processing {file_path}: {e}{PC.RESET}")
+        with stats_lock:
+            stats["SKIPPED"] += 1
+
     except Exception as e:
         with print_lock:
             print(f"{PC.CRITICAL}[!] Error processing {file_path}: {e}{PC.RESET}")
+        with stats_lock:
+            stats["SKIPPED"] += 1
 
 
 def main():
@@ -197,27 +270,68 @@ def main():
     parser.add_argument("--api", nargs='?', const=True, help="Set, update, or view API key")
     args = parser.parse_args()
 
+    # Resolve API key
     api_key = resolve_api_key(args.api)
 
+    # If only setting/viewing API key, exit after that
     if args.api is not None and not args.target:
         sys.exit(0)
 
+    # Validate that target was provided
     if not args.target:
         print(f"{PC.CRITICAL}[!] Error: No target provided.{PC.RESET}")
         sys.exit(1)
 
-    files_to_process = []
-    if os.path.isdir(args.target):
-        for root, _, files in (
-                os.walk(args.target) if args.recursive else [(args.target, [], os.listdir(args.target))]):
-            for f in files:
-                full_p = os.path.join(root, f)
-                if os.path.isfile(full_p): files_to_process.append(os.path.abspath(full_p))
-    elif os.path.isfile(args.target):
-        files_to_process.append(args.target)
+    print(f"{PC.INFO}[*] Initializing secure file collector...{PC.RESET}\n")
+
+    # Create secure file collector
+    collector = SecureFileCollector(
+        max_file_size=MAX_FILE_SIZE,
+        allow_large=args.large
+    )
+
+    # Determine base directory for path traversal protection
+    base_dir = None
+    try:
+        target_path = os.path.abspath(args.target)
+        if os.path.isdir(target_path):
+            base_dir = target_path
+            print(f"{PC.INFO}[*] Base directory set: {base_dir}{PC.RESET}")
+    except Exception as e:
+        print(f"{PC.CRITICAL}[!] Error resolving target path: {e}{PC.RESET}")
+        sys.exit(1)
+
+    # Collect and validate all files
+    files_to_process, collection_stats = collector.collect_files(
+        target=args.target,
+        recursive=args.recursive,
+        base_dir=base_dir,
+        verbose=True
+    )
+
+    # Handle case where no valid files found
+    if not files_to_process:
+        print(f"{PC.CRITICAL}[!] No valid files to process{PC.RESET}")
+        if collection_stats['total_found'] > 0:
+            print(f"{PC.WARNING}[!] Found {collection_stats['total_found']} files but all were filtered out{PC.RESET}")
+            collector.print_collection_stats()
+        sys.exit(1)
+
+    # Print collection statistics for large scans
+    if len(files_to_process) > 50 or args.metadata:
+        collector.print_collection_stats()
 
     results_log = []
-    stats = {"total": 0, "CRITICAL": 0, "SUSPICIOUS": 0, "CLEAN": 0, "SKIPPED": 0, "TRUSTED": 0}
+
+    stats = {
+        "total": 0,
+        "CRITICAL": 0,
+        "SUSPICIOUS": 0,
+        "CLEAN": 0,
+        "SKIPPED": collection_stats['total_found'] - collection_stats['validated'],
+        "TRUSTED": 0
+    }
+
     start_time = datetime.now()
 
     print(f"{PC.INFO}[*] Prism Engine Ready. Workers: {args.threads} | Targets: {len(files_to_process)}{PC.RESET}\n")
@@ -226,14 +340,41 @@ def main():
     else:
         print(f"{PC.WARNING}[!] Running without API Key (Offline Mode).{PC.RESET}")
 
+
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-            futures = [executor.submit(process_file_worker, f, args, api_key, stats, results_log) for f in
-                       files_to_process]
+            # Submit all tasks
+            futures = [
+                executor.submit(process_file_worker, f, args, api_key, stats, results_log)
+                for f in files_to_process
+            ]
+
+            # Wait for completion and handle errors
             for future in concurrent.futures.as_completed(futures):
-                future.result()
+                try:
+                    future.result()
+                except PermissionError as e:
+                    with print_lock:
+                        print(f"{PC.CRITICAL}[!] Permission error: {e}{PC.RESET}")
+                    with stats_lock:
+                        stats["SKIPPED"] += 1
+                except OSError as e:
+                    with print_lock:
+                        print(f"{PC.CRITICAL}[!] OS error: {e}{PC.RESET}")
+                    with stats_lock:
+                        stats["SKIPPED"] += 1
+                except Exception as e:
+                    with print_lock:
+                        print(f"{PC.CRITICAL}[!] Unexpected error: {e}{PC.RESET}")
+                    with stats_lock:
+                        stats["SKIPPED"] += 1
+
     except KeyboardInterrupt:
         print(f"\n{PC.WARNING}[!] User interrupted scan.{PC.RESET}")
+    except Exception as e:
+        print(f"\n{PC.CRITICAL}[!] Fatal error in scan engine: {e}{PC.RESET}")
+        import traceback
+        traceback.print_exc()
 
     duration = datetime.now() - start_time
     if stats["total"] > 0 or stats["SKIPPED"] > 0:
@@ -246,7 +387,7 @@ def main():
         if stats.get('TRUSTED', 0) > 0:
             print(f"{PC.SUCCESS}Whitelisted/Trusted: {stats['TRUSTED']}{PC.RESET}")
         if stats["SKIPPED"] > 0:
-            print(f"{PC.WARNING}Skipped (>100MB):    {stats['SKIPPED']}{PC.RESET}")
+            print(f"{PC.WARNING}Skipped:             {stats['SKIPPED']}{PC.RESET}")
         print(f"{PC.HEADER}{'=' * 77}{PC.RESET}")
 
     if args.log:

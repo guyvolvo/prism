@@ -2,6 +2,7 @@ import pefile
 import os
 from core.scanner import shannon_entropy
 
+
 def analyze_pe(file_path):
     try:
         pe = pefile.PE(file_path)
@@ -74,9 +75,7 @@ def analyze_pe(file_path):
 
         final_report["Stream_Results"].append(result)
 
-    if any("Packed" in t or "Suspicious API" in t for t in final_report["Triggers"]):
-        final_report["Status"] = "CRITICAL"
-    elif final_report["Triggers"]:
-        final_report["Status"] = "SUSPICIOUS"
+    if final_report["Triggers"]:
+        final_report["Status"] = "ANALYZED"
 
     return final_report
