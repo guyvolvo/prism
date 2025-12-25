@@ -36,14 +36,30 @@ MAX_FILE_SIZE = 100 * 1024 * 1024
 stats_lock = threading.Lock()
 print_lock = threading.Lock()
 
-
 import os
 import re
 
+_cached_api_key = None
+
 def resolve_api_key(args_api):
+
+    global _cached_api_key
+    if _cached_api_key:
+        return _cached_api_key
 
     SERVICE_NAME = "prism_scanner"
     KEY_NAME = "bazaar_api_key"
+
+    try:
+        import keyring
+        # Linux fallback: plaintext backend if DBus/SecretService unavailable
+        try:
+            from keyrings.alt.file import PlaintextKeyring
+            keyring.set_keyring(PlaintextKeyring())
+        except ImportError:
+            pass
+    except ImportError:
+        keyring = None
 
     # If user provided a key via command line, save it securely
     if isinstance(args_api, str):
@@ -53,55 +69,54 @@ def resolve_api_key(args_api):
         if not re.match(r'^[a-fA-F0-9]{64}$', clean_key):
             print(f"{PC.WARNING}[!] API key format validation skipped (adjust regex if needed){PC.RESET}")
 
-        try:
-            import keyring
-            keyring.set_password(SERVICE_NAME, KEY_NAME, clean_key)
-            print(f"{PC.SUCCESS}[+] API Key saved securely to system keyring{PC.RESET}")
-            return clean_key
-        except ImportError:
+        if keyring:
+            try:
+                keyring.set_password(SERVICE_NAME, KEY_NAME, clean_key)
+                print(f"{PC.SUCCESS}[+] API Key saved securely to system keyring{PC.RESET}")
+            except Exception as e:
+                print(f"{PC.CRITICAL}[!] Error saving key: {e}{PC.RESET}")
+        else:
             print(f"{PC.WARNING}[!] keyring not installed, falling back to environment variable{PC.RESET}")
-            return clean_key
-        except Exception as e:
-            print(f"{PC.CRITICAL}[!] Error saving key: {e}{PC.RESET}")
-            return clean_key
+        _cached_api_key = clean_key
+        return clean_key
 
-    # If user wants to view current key
     if args_api is True:
-        try:
-            import keyring
-            stored_key = keyring.get_password(SERVICE_NAME, KEY_NAME)
+        stored_key = None
+        if keyring:
+            try:
+                stored_key = keyring.get_password(SERVICE_NAME, KEY_NAME)
+                if stored_key:
+                    print(f"{PC.INFO}[*] API Key loaded from secure storage{PC.RESET}")
+            except Exception as e:
+                print(f"{PC.CRITICAL}[!] Error retrieving key: {e}{PC.RESET}")
+
+        if not stored_key:
+            stored_key = os.getenv("BAZAAR_API_KEY")
             if stored_key:
-                print(f"{PC.INFO}[*] API Key loaded from secure storage{PC.RESET}")
-                return stored_key
+                print(f"{PC.INFO}[*] Using API key from environment variable{PC.RESET}")
             else:
-                print(f"{PC.CRITICAL}[!] No API key found in secure storage{PC.RESET}")
-                # Fallback to environment
-                env_key = os.getenv("BAZAAR_API_KEY")
-                if env_key:
-                    print(f"{PC.INFO}[*] Using API key from environment variable{PC.RESET}")
-                    return env_key
+                print(f"{PC.CRITICAL}[!] No API key found in secure storage or environment{PC.RESET}")
                 return None
-        except ImportError:
-            print(f"{PC.WARNING}[!] keyring not installed, checking environment variable{PC.RESET}")
-            return os.getenv("BAZAAR_API_KEY")
-        except Exception as e:
-            print(f"{PC.CRITICAL}[!] Error retrieving key: {e}{PC.RESET}")
-            return None
 
-    try:
-        import keyring
-        stored_key = keyring.get_password(SERVICE_NAME, KEY_NAME)
-        if stored_key:
-            return stored_key
-    except (ImportError, Exception):
-        pass
+        _cached_api_key = stored_key
+        return stored_key
 
-    return os.getenv("BAZAAR_API_KEY")
 
+    stored_key = None
+    if keyring:
+        try:
+            stored_key = keyring.get_password(SERVICE_NAME, KEY_NAME)
+        except Exception:
+            pass
+
+    if not stored_key:
+        stored_key = os.getenv("BAZAAR_API_KEY")
+
+    _cached_api_key = stored_key
+    return stored_key
 
 
 def triage_router(file_path):
-
     try:
 
         with open(file_path, "rb") as f:
@@ -153,7 +168,6 @@ def print_metadata_only(file_path, sha256_hash, md5_hash, mime_type):
 
 
 def process_file_worker(file_path, args, api_key, stats, results_log):
-
     try:
 
         is_valid, reason = validate_before_processing(file_path, args.large)
@@ -172,7 +186,6 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
 
         sha256 = hashlib.sha256(raw_bytes).hexdigest()
         scanner = get_scanner()
-
 
         parser_data = triage_router(file_path)
         triage_data = triage(file_path=file_path, data=raw_bytes, scanner=scanner, api_key=api_key)
@@ -225,7 +238,6 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             "structure": parser_data,
             "Verdict": final_status
         }
-
 
         with stats_lock:
             results_log.append(report)
@@ -343,7 +355,6 @@ def main():
         print(f"{PC.SUCCESS}[+] API Connection established.{PC.RESET}")
     else:
         print(f"{PC.WARNING}[!] Running without API Key (Offline Mode).{PC.RESET}")
-
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:

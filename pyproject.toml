@@ -21,7 +21,7 @@ dependencies = [
     "colorama",
     "pyyaml",
     "keyring>=24.0.0",
-    "keyrings.alt>=4.1.0"
+    "keyrings.alt>=5.0.0"
 ]
 
 classifiers = [
