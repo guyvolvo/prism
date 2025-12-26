@@ -110,4 +110,38 @@ _**References :**_
 <p align=left">
   <img src="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExNG83cmo5MWgwMGM0N2pjc29qaG8wZGJ2cmM0M3F0bnA4bXV6bTdtdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/sk6yL9EGVeAcE/giphy.gif" alt="Prism Demo" width="200">
 </p>
+<details>
+  <summary><b>Disclamer :</b></summary>
 
+SECURITY WARNING: API keys are stored in memory during execution.
+- Do not run on untrusted systems
+- Do not run with elevated privileges unless necessary  
+- Memory dumps could expose the API key
+- Consider using environment variables that are cleared after scan
+
+1. NO WARRANTY: This software is provided "AS IS" without warranty of any kind,
+   express or implied. The authors make no representations about the accuracy,
+   reliability, or suitability of this software for any purpose.
+
+2. FALSE POSITIVES/NEGATIVES: This tool may incorrectly identify:
+   - Legitimate software as malicious (false positives)
+   - Malicious software as clean (false negatives)
+   Users must verify findings independently before taking action.
+
+3. DATA TRANSMISSION: This tool sends file hashes to third-party services:
+   - CIRCL HashLookup (hashlookup.circl.lu)
+   - MalwareBazaar API (abuse.ch)
+   No file contents are transmitted. Review privacy policies of these services.
+
+4. NO LIABILITY: In no event shall the authors be liable for any damages
+   including data loss, system damage, or business interruption arising from
+   use of this software.
+
+5. USER RESPONSIBILITY: Users are solely responsible for:
+   - Verifying scan results before deleting files
+   - Compliance with applicable laws and regulations
+   - Proper handling of sensitive data
+   - Backups before scanning
+
+By using this software, you accept these terms and assume all risks.
+</details>
