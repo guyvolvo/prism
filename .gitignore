@@ -17,3 +17,4 @@ Thumbs.db
 *.log
 tmp/
 env/
+diagnostic_tool.py

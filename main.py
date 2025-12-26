@@ -1,6 +1,7 @@
 import os
 import pathlib
 import re
+import stat
 import sys
 import argparse
 import json
@@ -10,12 +11,19 @@ import threading
 import concurrent.futures
 from datetime import datetime
 import logging
+
+
 logging.getLogger("keyring").setLevel(logging.WARNING) # Disable annoying logging from keyring
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vendor_path = os.path.join(current_dir, 'vendor')
 if os.path.exists(vendor_path) and vendor_path not in sys.path:
     sys.path.insert(0, vendor_path)
-
+"""
+note for tomrrow:
+Validate how CIRCL validation is being used to verify files
+verify by signauture, if it has MS signature then it is probably safer like winrar or 7z,
+create extensive test files
+"""
 try:
     from dotenv import load_dotenv, find_dotenv, set_key
 
@@ -171,17 +179,36 @@ def print_metadata_only(file_path, sha256_hash, md5_hash, mime_type):
         print("-" * 55 + "\n")
 
 
+# TOCTOU Vulnerability
 def process_file_worker(file_path, args, api_key, stats, results_log):
     try:
-
+        # Validate before opening file
         is_valid, reason = validate_before_processing(file_path, args.large)
         if not is_valid:
             with print_lock:
-                print(f"{PC.WARNING}[!] Validation failed for {os.path.basename(file_path)}: {reason}{PC.RESET}")
+                print(f"{PC.WARNING}[!] Validation failed: {reason}{PC.RESET}")
             with stats_lock:
                 stats["SKIPPED"] += 1
             return
+        try:
+            with open(file_path, "rb") as f:
+                # Check one more time that it's a regular file
+                file_stat = os.fstat(f.fileno())
+                if not stat.S_ISREG(file_stat.st_mode):
+                    raise ValueError("Not a regular file")
 
+                # Read with size check
+                file_size = file_stat.st_size
+                if not args.large and file_size > MAX_FILE_SIZE:
+                    raise ValueError(f"File too large: {file_size} bytes")
+
+                raw_bytes = f.read()
+        except Exception as e:
+            with print_lock:
+                print(f"{PC.CRITICAL}[!] Error reading {file_path}: {e}{PC.RESET}")
+            with stats_lock:
+                stats["SKIPPED"] += 1
+            return
         if not os.path.exists(file_path):
             return
 
@@ -206,7 +233,8 @@ def process_file_worker(file_path, args, api_key, stats, results_log):
             data=raw_bytes,
             scanner=scanner,
             api_key=api_key,
-            file_hash=sha256
+            file_hash=sha256,
+            verbose_circl=args.circl
         )
 
         if not isinstance(parser_data, dict):
@@ -308,6 +336,8 @@ def main():
     parser.add_argument("-t", "--threads", type=int, default=4, help="Threads (Default: 4)")
     parser.add_argument("--large", action="store_true", help="Bypass 100MB limit")
     parser.add_argument("--api", nargs='?', const=True, help="Set, update, or view API key")
+    parser.add_argument("-c", "--circl", action="store_true", help="Show detailed CIRCL whitelist diagnostic info")
+
     args = parser.parse_args()
 
     # Resolve API key
@@ -435,6 +465,65 @@ def main():
         print(f"{PC.SUCCESS}[+] Log saved: {args.log}{PC.RESET}")
 
     os._exit(0)
+
+
+def circl_diagnostic_mode(file_path, args):
+    """
+    Run CIRCL diagnostic without full scan.
+    Activated with: --circl --metadata (or just --circl alone)
+    """
+    from colors import PrismColors as PC
+    import hashlib
+
+    print(f"\n{PC.HEADER}{'=' * 70}{PC.RESET}")
+    print(f"{PC.HEADER}CIRCL DIAGNOSTIC MODE{PC.RESET}")
+    print(f"{PC.HEADER}{'=' * 70}{PC.RESET}\n")
+
+    # Calculate hash
+    try:
+        with open(file_path, "rb") as f:
+            raw_bytes = f.read()
+        sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        md5 = hashlib.md5(raw_bytes).hexdigest()
+    except Exception as e:
+        print(f"{PC.CRITICAL}[!] Error reading file: {e}{PC.RESET}")
+        return
+
+    # Show basic file info
+    print(f"{PC.INFO}File Information:{PC.RESET}")
+    print(f"  Path: {file_path}")
+    print(f"  Size: {len(raw_bytes):,} bytes ({len(raw_bytes) / (1024 * 1024):.2f} MB)")
+    print(f"  MD5:    {md5}")
+    print(f"  SHA256: {sha256}")
+
+    # Import whitelist checker
+    from core.scanner import comprehensive_whitelist_check
+
+    # Run comprehensive check with verbose output
+    result = comprehensive_whitelist_check(file_path, sha256, verbose=True)
+
+    # Summary
+    print(f"\n{PC.HEADER}{'=' * 70}{PC.RESET}")
+    print(f"{PC.HEADER}DIAGNOSTIC SUMMARY{PC.RESET}")
+    print(f"{PC.HEADER}{'=' * 70}{PC.RESET}")
+
+    if result["is_trusted"]:
+        color = PC.SUCCESS
+        status = "TRUSTED"
+    else:
+        color = PC.WARNING
+        status = "NOT WHITELISTED"
+
+    print(f"Status: {color}{status}{PC.RESET}")
+    print(f"Trust Level: {result['trust_level']}")
+    print(f"Confidence: {result['confidence'] * 100:.0f}%")
+    print(f"Details: {result['details']}")
+    print(f"Checks Performed: {', '.join(result['checks_performed'])}")
+
+    if 'warning' in result:
+        print(f"\n{PC.WARNING}{result['warning']}{PC.RESET}")
+
+    print(f"{PC.HEADER}{'=' * 70}{PC.RESET}\n")
 
 
 if __name__ == '__main__':
