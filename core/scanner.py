@@ -31,7 +31,6 @@ _whitelist_cache_lock = threading.Lock()
 LOCAL_WHITELIST_FILE = os.path.join(BASE_DIR, "local_whitelist.json")
 
 
-# Trust levels
 class TrustLevel:
     VERIFIED_SIGNED = "VERIFIED_SIGNED"
     SYSTEM_PATH = "SYSTEM_PATH"
@@ -39,8 +38,6 @@ class TrustLevel:
     LOCAL_WHITELIST = "LOCAL_WHITELIST"
     UNKNOWN = "UNKNOWN"
 
-
-# Secure session generator upon request
 
 
 def get_secure_session():
@@ -54,9 +51,6 @@ def get_secure_session():
 _session = get_secure_session()
 
 
-# ============================================================================
-# NEW: Multi-Tier Whitelist Helper Functions
-# ============================================================================
 
 def load_local_whitelist():
     """Load user-maintained local whitelist"""
@@ -190,10 +184,10 @@ def comprehensive_whitelist_check(file_path: str, file_hash: str, verbose: bool 
         })
 
         if verbose:
-            print(f"[+] FOUND in local whitelist")
-            print(f"    Reason: {entry.get('reason')}")
-            print(f"    Added: {entry.get('added')}")
-            print(f"    Confidence: 100%")
+            print(f"    [+] FOUND in local whitelist")
+            print(f"        Reason: {entry.get('reason')}")
+            print(f"        Added: {entry.get('added')}")
+            print(f"        Confidence: 100%")
 
         logger.info(f"File in local whitelist: {file_path}")
         return results
@@ -219,9 +213,9 @@ def comprehensive_whitelist_check(file_path: str, file_hash: str, verbose: bool 
             })
 
             if verbose:
-                print(f"  [+] VALID Microsoft signature")
-                print(f"    Signer: {signer}")
-                print(f"    Confidence: 95%")
+                print(f"    [+] VALID Microsoft signature")
+                print(f"        Signer: {signer}")
+                print(f"        Confidence: 95%")
 
             logger.info(f"Microsoft-signed file: {file_path}")
             return results
@@ -266,7 +260,7 @@ def comprehensive_whitelist_check(file_path: str, file_hash: str, verbose: bool 
         })
 
         if verbose:
-            print(f"  [+] FOUND in CIRCL with high trust")
+            print(f"    [+] FOUND in CIRCL with high trust")
 
         logger.info(f"File in CIRCL database: {circl_name}")
         return results
@@ -285,7 +279,7 @@ def comprehensive_whitelist_check(file_path: str, file_hash: str, verbose: bool 
         results["details"] = f"CIRCL: Low trust score - {circl_name}"
 
         if verbose:
-            print(f"  [!] Found in CIRCL but LOW trust score")
+            print(f"    [!] Found in CIRCL but LOW trust score")
 
         logger.warning(f"Low CIRCL trust: {file_path}")
 
@@ -294,7 +288,7 @@ def comprehensive_whitelist_check(file_path: str, file_hash: str, verbose: bool 
         results["details"] = "CIRCL lookup failed (network error)"
 
         if verbose:
-            print(f"  [X] CIRCL lookup failed (network/timeout)")
+            print(f"    [X] CIRCL lookup failed (network/timeout)")
 
     # Tier 4: System path heuristic
     if verbose:
@@ -618,6 +612,7 @@ def check_circl_whitelist(file_hash: str, verbose: bool = False):
         logger.exception(f"Unexpected error in CIRCL lookup: {e}")
         return (False, None, 'error')
 
+
 def check_malware_bazaar(file_hash: str, key: str = None):
     active_key = key or DEFAULT_API_KEY
     if not active_key: return None
@@ -670,6 +665,7 @@ def get_scanner():
     if _scanner_instance is None:
         _scanner_instance = PrismScanner()
     return _scanner_instance
+
 
 """
 def triage(file_path, data: bytes, scanner=None, api_key=None, file_hash=None, **kwargs):
@@ -1089,15 +1085,14 @@ def triage(file_path, data: bytes, scanner=None, api_key=None, file_hash=None, v
             "Confidence": f"{whitelist_result['confidence'] * 100:.0f}%"
         } if not whitelist_result.get("is_trusted") or whitelist_result["confidence"] < 0.80 else None,
         """
-        
+
         # Trying new logic below
-        
+
         "Whitelist_Info": {
             "Status": whitelist_result["trust_level"],
             "Details": whitelist_result["details"],
             "Confidence": f"{whitelist_result['confidence'] * 100:.0f}%"
         } if whitelist_result["is_trusted"] else None,
-
 
         "Threat_Indicators": indicators,
         "Entropy": entropy,
