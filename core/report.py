@@ -63,7 +63,7 @@ def generate_report(data):
     whitelist_info = analysis.get('Whitelist_Info')
     if whitelist_info:
         print(f"\n[+] WHITELIST STATUS:")
-        print(f"    {PC.SUCCESS}✓ TRUSTED FILE (Known Legitimate Software){PC.RESET}")
+        print(f"    {PC.SUCCESS}[+] TRUSTED FILE (Known Legitimate Software){PC.RESET}")
         print(f"    Source:       {whitelist_info.get('Source', 'Unknown')}")
         print(f"    Identified:   {PC.INFO}{whitelist_info.get('Identified_As', 'System File')}{PC.RESET}")
         print(f"    Hash Match:   {whitelist_info.get('Hash', 'N/A')[:16]}...")

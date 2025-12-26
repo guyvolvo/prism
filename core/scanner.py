@@ -904,7 +904,7 @@ def triage(file_path, data: bytes, scanner=None, api_key=None, file_hash=None, v
                 "Checks": ", ".join(whitelist_result["checks_performed"])
             },
 
-            "Threat_Indicators": [f"✓ TRUSTED: {whitelist_result['details']}"],
+            "Threat_Indicators": [f"[+] TRUSTED: {whitelist_result['details']}"],
             "Entropy": shannon_entropy(data),
             "Confidence_Metrics": {
                 "Intent_Score": 0,
@@ -984,6 +984,8 @@ def triage(file_path, data: bytes, scanner=None, api_key=None, file_hash=None, v
     if reputation:
         intent_score += 15
         indicators.append(f"[!] REPUTATION: {reputation.get('signature', 'Known Malware')}")
+        whitelist_result["is_trusted"] = False
+        trust_adjustment = 0
 
     for heuristic_tuple in heuristics:
         if isinstance(heuristic_tuple, tuple):
@@ -1077,13 +1079,25 @@ def triage(file_path, data: bytes, scanner=None, api_key=None, file_hash=None, v
         "Heuristics": heuristics_list,
         "Reputation": reputation_dict,
         "MalwareBazaar_Found": bool(reputation),
-
+        """
+        
+        
         "Whitelist_Info": {
             "Checked": True,
             "Status": whitelist_result["trust_level"],
             "Details": whitelist_result["details"],
             "Confidence": f"{whitelist_result['confidence'] * 100:.0f}%"
         } if not whitelist_result.get("is_trusted") or whitelist_result["confidence"] < 0.80 else None,
+        """
+        
+        # Trying new logic below
+        
+        "Whitelist_Info": {
+            "Status": whitelist_result["trust_level"],
+            "Details": whitelist_result["details"],
+            "Confidence": f"{whitelist_result['confidence'] * 100:.0f}%"
+        } if whitelist_result["is_trusted"] else None,
+
 
         "Threat_Indicators": indicators,
         "Entropy": entropy,
