@@ -57,11 +57,24 @@ def analyze_pe(file_path):
     if overlay_offset:
         overlay_size = len(pe.get_overlay())
 
-        if overlay_size > 102400:  # > 100KB
-            final_report["Triggers"].append(
-                f"LARGE OVERLAY DETECTED: {overlay_size} bytes (possible packer data)"
-            )
-        elif overlay_size > 0:
+        file_size = os.path.getsize(file_path)
+        is_likely_installer = file_size > 10 * 1024 * 1024
+
+        if overlay_size > 100 * 1024 * 1024:
+            if is_likely_installer:
+                final_report["PE_Metadata"]["Overlay_Size"] = f"{overlay_size} bytes (installer payload)"
+            else:
+                final_report["Triggers"].append(
+                    f"VERY LARGE OVERLAY: {overlay_size} bytes (unusual for non-installer)"
+                )
+        elif overlay_size > 1024 * 1024:
+            if is_likely_installer:
+                final_report["PE_Metadata"]["Overlay_Size"] = f"{overlay_size} bytes"
+            else:
+                final_report["Triggers"].append(
+                    f"LARGE OVERLAY: {overlay_size} bytes (possible packer)"
+                )
+        elif overlay_size > 102400:
             final_report["Triggers"].append(
                 f"Overlay Present: {overlay_size} bytes"
             )

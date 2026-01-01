@@ -31,15 +31,15 @@ def generate_report(data):
 
     if yara_matches:
         for match in yara_matches:
-            print(f"    -> {PC.CRITICAL}YARA MATCH: {match}{PC.RESET}")
+            print(f"    [*] {PC.CRITICAL}YARA MATCH: {match}{PC.RESET}")
 
     if heuristics:
         for h in heuristics:
             h_color = PC.CRITICAL if "REPUTATION" in h else PC.WARNING
-            print(f"    -> {h_color}HEURISTIC: {h}{PC.RESET}")
+            print(f"    [*] {h_color}HEURISTIC: {h}{PC.RESET}")
 
     if entropy > 7.5:
-        print(f"    -> {PC.WARNING}High Entropy ({entropy}): Potential Packing/Encryption{PC.RESET}")
+        print(f"    [*] {PC.WARNING}High Entropy ({entropy}): Potential Packing/Encryption{PC.RESET}")
     confidence = analysis.get('Confidence_Metrics', {})
     if confidence:
         intent = confidence.get('Intent_Score', 0)
@@ -50,6 +50,21 @@ def generate_report(data):
         print(f"    Intent Score:      {intent}/10")
         print(f"    Uncertainty Score: {uncertainty}/10")
         print(f"    False Positive Risk: {PC.WARNING if fp_risk != 'LOW' else PC.SUCCESS}{fp_risk}{PC.RESET}")
+
+        content_ctx = analysis.get('Content_Context')
+        if content_ctx:
+            print(f"\n[+] CONTENT ANALYSIS:")
+            is_doc = content_ctx.get('Is_Documentation', False)
+            context_type = content_ctx.get('Context', 'Unknown')
+            doc_score = content_ctx.get('Documentation_Score', '0.00')
+
+            if is_doc:
+                print(f"    Type: {PC.SUCCESS}{context_type}{PC.RESET}")
+                print(f"    Documentation Score: {PC.SUCCESS}{doc_score}{PC.RESET}")
+                print(f"    {PC.INFO}[*] File detected as documentation/educational content{PC.RESET}")
+            else:
+                print(f"    Type: {context_type}")
+                print(f"    Threat Score: {content_ctx.get('Threat_Score', '0.00')}")
 
     print(f"\n[+] MALWAREBAZAAR: ")
     if reputation:
@@ -69,7 +84,7 @@ def generate_report(data):
         print(f"    Hash Match:   {whitelist_info.get('Hash', 'N/A')[:16]}...")
 
     if trigger_count == 0 and not reputation:
-        print("    -> No immediate triggers found.")
+        print("    [*] No immediate triggers found.")
 
     print(f"\n[!] STRUCTURE ANALYSIS:")
     if all_struct_alerts:
@@ -77,7 +92,7 @@ def generate_report(data):
         for trigger in all_struct_alerts:
             print(f"      - {trigger}")
     elif not heuristics and not yara_matches:
-        print("    -> Analysis complete (No structural anomalies).")
+        print("    [*] Analysis complete (No structural anomalies).")
 
     has_high_entropy_stream = False
     if 'Stream_Results' in struct and struct['Stream_Results']:

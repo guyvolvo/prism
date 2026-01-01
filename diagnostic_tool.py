@@ -116,7 +116,7 @@ def check_circl_api(file_hash):
             print(f"  File Type: {data.get('FileType', 'N/A')}")
 
             if 'KnownMalicious' in data:
-                print(f"  ⚠️  Known Malicious: {data['KnownMalicious']}")
+                print(f"  [!]  Known Malicious: {data['KnownMalicious']}")
 
             print(f"\nFull Response:")
             print(json.dumps(data, indent=2))
@@ -189,13 +189,13 @@ def diagnose_file(file_path):
     valid_hashes = [h for h in hashes if not str(h).startswith("ERROR")]
 
     if len(set(valid_hashes)) == 1:
-        print("✓ All methods agree - SHA-256 calculation is CORRECT")
+        print("[+] All methods agree - SHA-256 calculation is CORRECT")
         final_hash = valid_hashes[0]
     elif len(valid_hashes) == 0:
-        print("✗ All calculations failed!")
+        print("[X] All calculations failed!")
         return
     else:
-        print("✗ WARNING: Hash mismatch detected!")
+        print("[X] WARNING: Hash mismatch detected!")
         print("This should never happen - possible file corruption or race condition")
         return
 
@@ -209,13 +209,13 @@ def diagnose_file(file_path):
 
     file_path_lower = file_path.lower()
     if 'windows\\system32' in file_path_lower or 'windows\\syswow64' in file_path_lower:
-        print("✓ File is in Windows system directory")
+        print("[+] File is in Windows system directory")
         print("  Recommendation: Even if not in CIRCL, likely legitimate")
     elif 'program files' in file_path_lower:
-        print("✓ File is in Program Files")
+        print("[+] File is in Program Files")
         print("  Recommendation: Check digital signature")
     else:
-        print("ℹ️  File is in non-standard location")
+        print("[!]  File is in non-standard location")
         print("  Recommendation: Higher scrutiny needed")
 
     print(f"\n{'=' * 70}\n")

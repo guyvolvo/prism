@@ -14,6 +14,11 @@ import logging
 
 
 logging.getLogger("keyring").setLevel(logging.WARNING) # Disable annoying logging from keyring
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s'
+)
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vendor_path = os.path.join(current_dir, 'vendor')
 if os.path.exists(vendor_path) and vendor_path not in sys.path:
@@ -163,7 +168,7 @@ def triage_router(file_path, api_key=None):
         if magic in chunk:
             return format_binary_alert("macOS", "Embedded Mach-O Binary")
 
-    return {"Stream_Results": [], "Triggers": [], "Status": "Unknown"}
+    return {"Status": "SKIPPED_PARSER", "Triggers": [], "Stream_Results": []}
 
 
 def print_metadata_only(file_path, sha256_hash, md5_hash, mime_type):
