@@ -56,21 +56,21 @@ Prism integrates with **MalwareBazaar** to perform real-time hash lookups. This 
       
 **Prism automatically generates a local .env file in the project root to securely store and use your MalwareBazaar API key for future scanning sessions.**
 
-## ✨ Key Features
+##  Key Features
 
-* **🛡️ Safe Static Analysis:** Zero-execution environment. All inspections are strictly read-only, ensuring malware cannot detonate during the triage phase.
-* **📂 Multi-Format Support:** Deep parsing capabilities for:
+* ** Safe Static Analysis:** Zero-execution environment. All inspections are strictly read-only, ensuring malware cannot detonate during the triage phase.
+* ** Multi-Format Support:** Deep parsing capabilities for:
     * **PE (Windows Executables):** Headers, sections, and import tables.
     * **Documents:** PDF structure and OLE/Office (Word, Excel, PowerPoint) streams.
-* **🕵️ Indicator Detection:** Automated extraction of embedded scripts (VBA, JS), suspicious URLs, IP addresses, and obfuscation patterns.
-* **📊 Entropy & Heuristic Scoring:** Advanced calculation of file entropy to identify packed sections and suspicious structural anomalies.
-* **🎯 YARA Integration:** Full support for custom and public YARA rulesets to match known threat families and TTPs.
-* **📝 Analyst-Friendly Reports:** Actionable output available in **JSON** (for automation) or **CLI** (for human readability), prioritizing risk levels.
-* **🛠️ Downstream RE Guidance:** Intelligent flagging of high-risk samples to streamline your workflow with tools like **Ghidra**, **IDA Pro**, or **Binary Ninja**.
+* ** Indicator Detection:** Automated extraction of embedded scripts (VBA, JS), suspicious URLs, IP addresses, and obfuscation patterns.
+* ** Entropy & Heuristic Scoring:** Advanced calculation of file entropy to identify packed sections and suspicious structural anomalies.
+* ** YARA Integration:** Full support for custom and public YARA rulesets to match known threat families and TTPs.
+* ** Analyst-Friendly Reports:** Actionable output available in **JSON** (for automation) or **CLI** (for human readability), prioritizing risk levels.
+* ** Downstream RE Guidance:** Intelligent flagging of high-risk samples to streamline your workflow with tools like **Ghidra**, **IDA Pro**, or **Binary Ninja**.
 * **! Prism is OS-agnostic, but designed to be used in a malware-analysis environment. !**
 ---
 
-## ⚙️ Workflow
+##  Workflow
 
 <div align="center">
   <p><i>The Prism analysis pipeline is designed to move from raw data to actionable intelligence.</i></p>
@@ -83,7 +83,7 @@ Prism integrates with **MalwareBazaar** to perform real-time hash lookups. This 
 5.  **Triage:** Use the generated report to decide: *Discard, Archive, or move to Reverse Engineering.*
 
 ---
-## 📂 Project Structure & Setup
+##  Project Structure & Setup
 
 ```text
 prism/
